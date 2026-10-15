@@ -43,6 +43,9 @@ const project = new awscdk.AwsCdkConstructLibrary({
     '@aws-sdk/client-s3@^3',
     '@aws-sdk/client-cloudwatch-logs@^3',
     '@aws-sdk/client-lambda-web@^3.1151.0',
+    // Progressive deployments (traffic shift handlers): alarm states and the stack's status (rollback detection).
+    '@aws-sdk/client-cloudwatch@^3',
+    '@aws-sdk/client-cloudformation@^3',
     '@types/aws-lambda',
     'aws-sdk-client-mock@^4',
     // Live end-to-end tests (test/e2e): deploy, call with SigV4/SigV4a, inspect every region.
@@ -71,9 +74,12 @@ const project = new awscdk.AwsCdkConstructLibrary({
 // The provider handler lives outside src/ (jsii only compiles the public library) and is
 // bundled with its AWS SDK clients, since nodejs24.x doesn't include @aws-sdk/client-lambda-web.
 const bundleHandlers = project.addTask('bundle:handlers', {
-  description: 'Bundle the custom resource handler into assets/',
+  description: 'Bundle the custom resource handlers into assets/',
   exec: 'esbuild handlers/web-function-provider/index.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=assets/web-function-provider/index.js',
 });
+// The deployment provider's handlers (canary and linear deployments) run in their own Lambda functions behind the
+// Provider framework, so they're bundled separately.
+bundleHandlers.exec('esbuild handlers/web-function-deployment/index.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=assets/web-function-deployment/index.js');
 project.preCompileTask.spawn(bundleHandlers);
 // Live end-to-end tests: deploy real stacks in ap-south-1 (+ us-east-1, eu-west-1), verify, destroy.
 // Needs AWS credentials (e.g. AWS_PROFILE in a git-ignored mise.local.toml); not part of `build`.

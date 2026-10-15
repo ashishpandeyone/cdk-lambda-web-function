@@ -13,8 +13,9 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { Sha256 } from '@aws-crypto/sha256-js';
+import { CloudWatchClient, PutMetricDataCommand, SetAlarmStateCommand } from '@aws-sdk/client-cloudwatch';
 import { CloudWatchLogsClient, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
-import { LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
+import { GetWebFunctionEndpointCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
 import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { SignatureV4a } from '@smithy/signature-v4a';
@@ -27,6 +28,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const credentials = fromNodeProviderChain();
 const web = new LambdaWebClient({ region: HOME, credentials });
 const sts = new STSClient({ region: HOME, credentials });
+const cloudwatch = new CloudWatchClient({ region: HOME, credentials });
 const logsIn = (region: string) => new CloudWatchLogsClient({ region, credentials });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -44,6 +46,7 @@ interface Context {
   endpoints?: string;
   stable?: string;
   split?: string;
+  deployment?: string;
 }
 
 class Scenario {
@@ -87,7 +90,14 @@ class Scenario {
     return ['--app', 'npx tsx test/e2e/app.ts', '--output', this.outdir, '-c', `scenario=${this.id}`, '-c', `endpointType=${ctx.endpointType}`,
       '-c', `regions=${JSON.stringify(ctx.regions)}`, '-c', `auth=${ctx.auth ?? 'AWS_IAM'}`, '-c', `version=${ctx.version ?? 'v1'}`,
       '-c', `kind=${ctx.kind ?? 'web'}`, '-c', `bundling=${ctx.bundling ?? 'local'}`,
-      ...Object.entries({ appVersion: ctx.appVersion, retention: ctx.retention, endpoints: ctx.endpoints, stable: ctx.stable, split: ctx.split })
+      ...Object.entries({
+        appVersion: ctx.appVersion,
+        retention: ctx.retention,
+        endpoints: ctx.endpoints,
+        stable: ctx.stable,
+        split: ctx.split,
+        deployment: ctx.deployment,
+      })
         .filter(([, v]) => v !== undefined).flatMap(([k, v]) => ['-c', `${k}=${v}`])];
   }
 }
@@ -400,9 +410,126 @@ async function scenarioEndpointsAndRevisions(): Promise<Scenario> {
   return s;
 }
 
+/** An endpoint's weights (`rev:weight,...`), and whether every region has applied them. */
+async function endpointWeights(functionName: string, endpointName: string) {
+  const e = await web.send(new GetWebFunctionEndpointCommand({ functionName, endpointName }));
+  const key = (ws?: { revisionId?: string; weight?: number }[]) => (ws ?? []).map((w) => `${w.revisionId}:${w.weight}`).sort().join(',');
+  const weights = key(e.revisionWeights);
+  const regions = Object.values(e.regionalEndpoints ?? {});
+  // A region lists its weights once the endpoint has been updated (not right after it was created).
+  const settled = e.updateStatus === 'Successful'
+    && regions.every((r) => r.updateStatus === 'Successful' && (!r.revisionWeights?.length || key(r.revisionWeights) === weights));
+  return { weights, settled, regions: regions.length };
+}
+
+/** Records every distinct (settled) weight state of the endpoints while `during` runs. */
+async function watchWeights(functionName: string, endpointNames: string[], during: Promise<unknown>) {
+  const seen = new Map<string, string[]>(endpointNames.map((n) => [n, []]));
+  let done = false;
+  const finished = during.finally(() => { done = true; });
+  while (!done) {
+    for (const name of endpointNames) {
+      const w = await endpointWeights(functionName, name).catch(() => undefined);
+      const states = seen.get(name)!;
+      if (w?.settled && states[states.length - 1] !== w.weights) states.push(w.weights);
+    }
+    await Promise.race([sleep(5_000), finished.catch(() => {})]);
+  }
+  return seen;
+}
+
+async function scenarioProgressive(): Promise<Scenario> {
+  const s = new Scenario('G', 'progressive deployments: canary (MULTI_REGION) and linear endpoints, rollback on an alarm');
+  const base: Context = { endpointType: 'MULTI_REGION', regions: ['us-east-1'], deployment: 'progressive' };
+  let ctx: Context = { ...base, appVersion: 'g1' };
+  let out: Outputs | undefined;
+  const admin = await adminCredentials();
+  const versions = async (url: string, signed: boolean, n: number) => {
+    const seen = new Set<string>();
+    for (let i = 0; i < n; i++) seen.add((await call(url, signed ? admin : undefined)).body?.appVersion);
+    return [...seen].sort();
+  };
+  try {
+    // 1. First deploy: no previous revision, so both endpoints are created serving it.
+    let started = Date.now();
+    out = await s.deploy(ctx);
+    const r1 = out.RevisionId;
+    s.check('first deploy: default (canary) endpoint serves g1', JSON.stringify(await versions(out.Url, true, 3)) === '["g1"]');
+    s.check('first deploy: Public (linear) endpoint serves g1', JSON.stringify(await versions(out.PublicUrl, false, 3)) === '["g1"]');
+    s.check('first deploy does not wait for a bake', Date.now() - started < 8 * 60_000, `${Math.round((Date.now() - started) / 1000)}s`);
+
+    // 2. A new revision: the default endpoint runs a 20% canary for 2 minutes, Public moves 50% a minute.
+    ctx = { ...base, appVersion: 'g2' };
+    started = Date.now();
+    const deploying = s.deploy(ctx);
+    const sampled = (async () => {
+      // During the canary: sample the default endpoint once every region has the 80/20 split.
+      for (let i = 0; i < 60; i++) {
+        const w = await endpointWeights(out!.FunctionName, out!.EndpointName);
+        if (w.settled && /:20/.test(w.weights)) return versions(out!.Url, true, 30);
+        await sleep(5_000);
+      }
+      return [];
+    })();
+    const seen = await watchWeights(out.FunctionName, [out.EndpointName, out.PublicEndpointName], deploying);
+    out = await deploying;
+    const r2 = out.RevisionId;
+    const elapsed = Math.round((Date.now() - started) / 1000);
+    s.check('canary: the default endpoint went 100 → 80/20 → 100 in every region',
+      JSON.stringify(seen.get(out.EndpointName)) === JSON.stringify([`${r1}:100`, [`${r1}:80`, `${r2}:20`].sort().join(','), `${r2}:100`]),
+      (seen.get(out.EndpointName) ?? []).join(' → '));
+    s.check('canary: both revisions served during the bake', JSON.stringify(await sampled) === '["g1","g2"]', (await sampled).join(', '));
+    s.check('linear: Public went 100 → 50/50 → 100',
+      JSON.stringify(seen.get(out.PublicEndpointName)) === JSON.stringify([`${r1}:100`, [`${r1}:50`, `${r2}:50`].sort().join(','), `${r2}:100`]),
+      (seen.get(out.PublicEndpointName) ?? []).join(' → '));
+    s.check('the deployment waited for the 2-minute bake', elapsed >= 120, `${elapsed}s`);
+    s.check('after the deployment both endpoints serve g2',
+      JSON.stringify(await versions(out.Url, true, 5)) === '["g2"]' && JSON.stringify(await versions(out.PublicUrl, false, 5)) === '["g2"]');
+
+    // 3. Another revision, rolled back by the alarm during the canary.
+    const before = out;
+    ctx = { ...base, appVersion: 'g3' };
+    const failing = s.deploy(ctx).then(() => undefined, (e: Error) => e);
+    let alarmed = false;
+    for (let i = 0; i < 60 && !alarmed; i++) {
+      const w = await endpointWeights(before.FunctionName, before.EndpointName);
+      if (w.settled && /:20/.test(w.weights)) {
+        // A breaching data point keeps the alarm in ALARM; setting the state makes it immediate (alarms evaluate once a minute).
+        await cloudwatch.send(new PutMetricDataCommand({ Namespace: 'WebFnE2E/G', MetricData: [{ MetricName: 'ForcedErrors', Value: 5 }] }));
+        await cloudwatch.send(new SetAlarmStateCommand({ AlarmName: before.AlarmName, StateValue: 'ALARM', StateReason: 'e2e: forced rollback' }));
+        alarmed = true;
+        s.log(`canary at ${w.weights}: alarm ${before.AlarmName} forced into ALARM`);
+      } else {
+        await sleep(5_000);
+      }
+    }
+    const error = await failing;
+    s.check('the alarm failed the deployment', alarmed && error !== undefined && /went into ALARM/.test(error.message), (error?.message ?? 'deploy succeeded').split('\n').slice(0, 3).join(' | '));
+    const after = await endpointWeights(before.FunctionName, before.EndpointName);
+    const pubAfter = await endpointWeights(before.FunctionName, before.PublicEndpointName);
+    s.check('rollback: the default endpoint is back on g2 in every region', after.settled && after.weights === `${r2}:100`, after.weights);
+    s.check('rollback: Public is back on g2 in every region', pubAfter.settled && pubAfter.weights === `${r2}:100`, pubAfter.weights);
+    s.check('rollback: both endpoints serve g2',
+      JSON.stringify(await versions(before.Url, true, 10)) === '["g2"]' && JSON.stringify(await versions(before.PublicUrl, false, 10)) === '["g2"]');
+    ctx = { ...base, appVersion: 'g2' };
+  } catch (e) {
+    s.check('scenario ran to completion', false, (e as Error).message);
+  } finally {
+    await s.destroy(ctx).catch((e) => s.check('destroy', false, (e as Error).message));
+    if (out) await checkNothingLeft(s, out);
+  }
+  return s;
+}
+
 async function main() {
   const all: Record<string, () => Promise<Scenario>> = {
-    A: scenarioPerRegion, B: scenarioMultiRegion, C: scenarioPublicHome, D: scenarioNodejs, E: scenarioNodejsDocker, F: scenarioEndpointsAndRevisions,
+    A: scenarioPerRegion,
+    B: scenarioMultiRegion,
+    C: scenarioPublicHome,
+    D: scenarioNodejs,
+    E: scenarioNodejsDocker,
+    F: scenarioEndpointsAndRevisions,
+    G: scenarioProgressive,
   };
   const selected = process.argv.slice(2).filter((a) => all[a]);
   const run = selected.length > 0 ? selected : Object.keys(all);

@@ -5,7 +5,17 @@
       "type": "build"
     },
     {
+      "name": "@aws-sdk/client-cloudformation",
+      "version": "^3",
+      "type": "build"
+    },
+    {
       "name": "@aws-sdk/client-cloudwatch-logs",
+      "version": "^3",
+      "type": "build"
+    },
+    {
+      "name": "@aws-sdk/client-cloudwatch",
       "version": "^3",
       "type": "build"
     },
