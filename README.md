@@ -59,7 +59,7 @@ Requests carry `lambda-web-request-id` and `lambda-web-endpoint-name` headers.
 
 ## Regions and endpoints
 
-Each `WebFunction` has one endpoint, `fn.endpoint`:
+Each `WebFunction` has a default endpoint, `fn.endpoint`, configured with the `endpoint` property. [Add more](#more-endpoints) with `fn.addEndpoint()`.
 
 | `endpointType` | URL | Routing |
 |---|---|---|
@@ -84,6 +84,34 @@ new CfnOutput(this, 'UsEast1Url', { value: perRegion.endpoint.regionalUrl('us-ea
 
 - `MULTI_REGION` and `PER_REGION` need at least one region besides the home region; `HOME_REGION` takes none.
 - A MultiRegion endpoint takes about a minute to create.
+- Lambda routes a `MULTI_REGION` endpoint by latency, not by health: it doesn't fail over when a region has problems.
+
+### More endpoints
+
+A function can have up to 10 endpoints, each with its own URL, authentication, regions and limits. For example, a public endpoint next to an IAM-only global one:
+
+```ts
+const api = new WebFunction(this, 'Api', {
+  runtime: lambda.Runtime.NODEJS_24_X,
+  code: lambda.Code.fromAsset('dist'),
+  authType: WebFunctionAuthType.NONE,              // the default endpoint is public
+  endpoint: { rateLimit: 1000 },                   // requests per second
+});
+
+const internal = api.addEndpoint('Internal', {
+  authType: WebFunctionAuthType.AWS_IAM,
+  endpointType: WebFunctionEndpointType.MULTI_REGION,
+  regions: ['us-east-1', 'eu-west-1'],
+  description: 'Service-to-service traffic',
+  maxEnvironments: 50,
+});
+internal.grantInvoke(consumerRole);
+new CfnOutput(this, 'InternalUrl', { value: internal.url });
+```
+
+- `rateLimit` takes 0 (blocks all traffic), 100–1,000 in steps of 100, or 2,000–10,000 in steps of 1,000; excess requests get HTTP 429. `maxEnvironments` takes 2–10,000.
+- **Both limits apply separately in each region** an endpoint serves from: a 3-region endpoint with `rateLimit: 1000` accepts up to 1,000 requests per second in each region.
+- Endpoints can serve the same regions. The construct owns one `.local` log group per region, whichever endpoints serve it.
 
 ### Changing regions or the endpoint type
 
@@ -91,7 +119,7 @@ An endpoint's type and regions can't change in place: a change creates a **new e
 
 | `endpointName` | Physical name | Changing `regions` or `endpointType` |
 |---|---|---|
-| omitted (recommended) | `default-<hash of type and regions>` | works: new endpoint, new URL |
+| omitted (recommended) | `default-<hash>` for `fn.endpoint`, `<id>-<hash>` for added endpoints; the hash covers the type and regions | works: new endpoint, new URL |
 | set, e.g. `'live'` | `live` | also change the name in the same deployment, or it fails with *The endpoint live already exists* (the stack rolls back and the old endpoint keeps serving) |
 
 The construct warns at synth time when `endpointName` is set.
@@ -107,7 +135,7 @@ The construct warns at synth time when `endpointName` is set.
 fn.grants.invoke(consumerRole); // or fn.grantInvoke(consumerRole), as on lambda.Function
 ```
 
-The grant is on the endpoint's home-region ARN, which IAM evaluates in every region the endpoint serves from, including the global URL.
+The grant is on the endpoint's home-region ARN, which IAM evaluates in every region the endpoint serves from, including the global URL. `fn.grants` covers the default endpoint only; grant other endpoints with their own `grantInvoke()` or `grants.invoke()`.
 
 | Endpoint | How to sign |
 |---|---|
@@ -181,9 +209,41 @@ new NodejsWebFunction(this, 'Api', {
 
 Lambda Web Functions download code as the `lambda.amazonaws.com` service principal, from a **versioned** bucket, and the CDK bootstrap bucket allows neither. So each stack gets a small code bucket, and the code is copied into it on deploy.
 
-### Updates
+## Revisions
 
-Any change to code or configuration creates a new **revision**. The endpoint switches to it once it's ready, and the old revision is deleted after the deployment succeeds; a failed deployment rolls back to it. If nothing changed, nothing is deployed.
+Any change to code or configuration creates a new **revision** (`fn.currentRevision`), and endpoints switch to it once it's ready. A failed deployment rolls back to the previous revision. If nothing changed, nothing is deployed.
+
+Earlier revisions are kept, so you can roll back or route traffic to them. After each deployment, the construct deletes the oldest beyond `revisionRetention` (default 20, up to 50). It never deletes a revision an endpoint routes to, or one the previous deployment used, which a rollback returns to.
+
+```ts
+new WebFunction(this, 'Api', {
+  runtime: lambda.Runtime.NODEJS_24_X,
+  code: lambda.Code.fromAsset('dist'),
+  authType: WebFunctionAuthType.AWS_IAM,
+  revisionRetention: 5,
+});
+```
+
+### Routing to earlier revisions
+
+Reference an earlier revision by its ID (for example from a `CfnOutput` of `fn.currentRevision.revisionId`, or `aws lambda-web list-web-function-revisions`). Then pin an endpoint to it, or split traffic between two revisions:
+
+```ts
+const previous = WebFunctionRevision.fromRevisionAttributes(this, 'Previous', {
+  webFunction: fn,
+  revisionId: 'rev-a1b2c',
+});
+
+// Keep the default endpoint on the previous revision, and send 10% to the new one:
+fn.endpoint.routeTraffic(previous, [{ revision: fn.currentRevision, weight: 0.1 }]);
+
+// Or a second endpoint that stays on the previous revision while fn.endpoint moves on:
+fn.addEndpoint('Stable', { authType: WebFunctionAuthType.AWS_IAM, revision: previous });
+```
+
+- An endpoint routes to at most two revisions. The additional revision's `weight` is a whole percentage, from 0.01 to 0.99.
+- To promote, remove `routeTraffic` (or `revision`) and deploy: the endpoint serves the current revision again.
+- Lambda Web Function metrics have no revision dimension. To compare a split's revisions, log a version you control (for example an environment variable) from your application.
 
 ## Logs in every region
 
@@ -219,7 +279,7 @@ new WebFunction(this, 'Api', {
 
 ## Limitations
 
-- One endpoint per function; no traffic splitting between revisions.
+- Traffic moves between revisions only as declared in code: no gradual (canary or linear) deployments with automatic rollback yet.
 - Not yet supported: importing existing functions, VPC access (network connectors), resource-policy permissions, KMS encryption, metrics helpers, tracing, and a CloudFront origin.
 - `cdk deploy --hotswap` and `cdk watch` don't support Web Functions.
 - Quotas: 10 endpoints and about 50 revisions per function (Lambda cleans up older revisions automatically), and 10,000 requests per second per endpoint. Per account and region: 100,000 requests per second and 2,000 Arm64 vCPUs (each execution environment uses 2). The account quotas are adjustable, and new accounts start lower. See [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).

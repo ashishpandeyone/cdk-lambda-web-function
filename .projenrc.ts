@@ -111,8 +111,10 @@ project.postCompileTask.spawn(rosetta);
 
 project.package.addField('awslint', {
   exclude: [
-    // 0.1 creates exactly one endpoint per function, only through WebFunction (private constructor).
+    // Endpoints are created only through WebFunction (constructor, addEndpoint), which owns their log groups in every region.
     'construct-ctor:@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint',
+    // Revisions are created by WebFunction (currentRevision) or referenced (fromRevisionAttributes), never constructed directly.
+    'construct-ctor:@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision',
     // Importing existing functions (fromXxx) is planned after 0.1.
     'from-method:@ashishpandeyone/cdk-lambda-web-function.WebFunction',
     // NodejsWebFunction extends WebFunction and implements IWebFunction through it.

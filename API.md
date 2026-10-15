@@ -51,6 +51,7 @@ new NodejsWebFunction(scope: Construct, id: string, props: NodejsWebFunctionProp
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.with">with</a></code> | Applies one or more mixins to this construct. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.applyCrossStackReferenceStrength">applyCrossStackReferenceStrength</a></code> | Override the cross-stack reference strength for this resource. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.applyRemovalPolicy">applyRemovalPolicy</a></code> | Apply the given removal policy to this resource. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addEndpoint">addEndpoint</a></code> | Adds an endpoint (up to 10 per function), e.g. a public one next to an IAM-only one, or one pinned to an earlier revision. Each endpoint has its own URL, authentication, regions and limits. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addEnvironment">addEnvironment</a></code> | Adds an environment variable. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addToRolePolicy">addToRolePolicy</a></code> | Adds a statement to the execution role's policy. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.grantInvoke">grantInvoke</a></code> | Allows `grantee` to call the endpoint. |
@@ -125,6 +126,28 @@ account for data recovery and cleanup later (`RemovalPolicy.RETAIN`).
 ###### `policy`<sup>Required</sup> <a name="policy" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.applyRemovalPolicy.parameter.policy"></a>
 
 - *Type:* aws-cdk-lib.RemovalPolicy
+
+---
+
+##### `addEndpoint` <a name="addEndpoint" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addEndpoint"></a>
+
+```typescript
+public addEndpoint(id: string, options: AddWebFunctionEndpointOptions): WebFunctionEndpoint
+```
+
+Adds an endpoint (up to 10 per function), e.g. a public one next to an IAM-only one, or one pinned to an earlier revision. Each endpoint has its own URL, authentication, regions and limits.
+
+###### `id`<sup>Required</sup> <a name="id" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addEndpoint.parameter.id"></a>
+
+- *Type:* string
+
+the endpoint's construct ID, also used in its generated name (`<id>-<hash>`).
+
+---
+
+###### `options`<sup>Required</sup> <a name="options" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addEndpoint.parameter.options"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions">AddWebFunctionEndpointOptions</a>
 
 ---
 
@@ -262,9 +285,10 @@ Check whether the given construct is a Resource.
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.env">env</a></code> | <code>aws-cdk-lib.interfaces.ResourceEnvironment</code> | The environment this resource belongs to. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.stack">stack</a></code> | <code>aws-cdk-lib.Stack</code> | The stack in which this resource is defined. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a></code> | The function's endpoint. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.currentRevision">currentRevision</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a></code> | The revision built from the current code and configuration. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a></code> | The default endpoint. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.grantPrincipal">grantPrincipal</a></code> | <code>aws-cdk-lib.aws_iam.IPrincipal</code> | The principal to grant permissions to (the execution role). |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.grants">grants</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a></code> | Grants on the function (e.g. `grants.invoke(principal)`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.grants">grants</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a></code> | Grants on the default endpoint (e.g. `grants.invoke(principal)`). Other endpoints have their own `grants`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.logGroup">logGroup</a></code> | <code>aws-cdk-lib.aws_logs.ILogGroup</code> | The home-region log group that receives the logs of every region the function serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.revisionId">revisionId</a></code> | <code>string</code> | The ID of the current revision. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.role">role</a></code> | <code>aws-cdk-lib.aws_iam.IRole</code> | The execution role. |
@@ -318,6 +342,18 @@ The stack in which this resource is defined.
 
 ---
 
+##### `currentRevision`<sup>Required</sup> <a name="currentRevision" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.currentRevision"></a>
+
+```typescript
+public readonly currentRevision: IWebFunctionRevision;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a>
+
+The revision built from the current code and configuration.
+
+---
+
 ##### `endpoint`<sup>Required</sup> <a name="endpoint" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.endpoint"></a>
 
 ```typescript
@@ -326,7 +362,9 @@ public readonly endpoint: WebFunctionEndpoint;
 
 - *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a>
 
-The function's endpoint.
+The default endpoint.
+
+Add more with `addEndpoint`.
 
 ---
 
@@ -350,7 +388,7 @@ public readonly grants: WebFunctionGrants;
 
 - *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a>
 
-Grants on the function (e.g. `grants.invoke(principal)`).
+Grants on the default endpoint (e.g. `grants.invoke(principal)`). Other endpoints have their own `grants`.
 
 ---
 
@@ -377,6 +415,8 @@ public readonly revisionId: string;
 - *Type:* string
 
 The ID of the current revision.
+
+Same as `currentRevision.revisionId`.
 
 ---
 
@@ -435,8 +475,9 @@ A reference to this function, for APIs that accept `lambda.IWebFunctionRef`.
 
 A Node.js HTTP server running as an AWS Lambda Web Function, served from one or more regions.
 
-Creates the function, its current revision (code and configuration; any change replaces it),
-an HTTPS endpoint, an execution role, and owns the function's log groups in every region.
+Creates the function, its current revision (code and configuration; any change creates a new one,
+and the newest `revisionRetention` are kept), a default HTTPS endpoint, an execution role, and owns
+the function's log groups in every region its endpoints serve from.
 
 Importing existing functions (`fromXxx` methods) is planned after 0.1.
 
@@ -482,6 +523,7 @@ new WebFunction(scope: Construct, id: string, props: WebFunctionProps)
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.with">with</a></code> | Applies one or more mixins to this construct. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.applyCrossStackReferenceStrength">applyCrossStackReferenceStrength</a></code> | Override the cross-stack reference strength for this resource. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.applyRemovalPolicy">applyRemovalPolicy</a></code> | Apply the given removal policy to this resource. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.addEndpoint">addEndpoint</a></code> | Adds an endpoint (up to 10 per function), e.g. a public one next to an IAM-only one, or one pinned to an earlier revision. Each endpoint has its own URL, authentication, regions and limits. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.addEnvironment">addEnvironment</a></code> | Adds an environment variable. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.addToRolePolicy">addToRolePolicy</a></code> | Adds a statement to the execution role's policy. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.grantInvoke">grantInvoke</a></code> | Allows `grantee` to call the endpoint. |
@@ -556,6 +598,28 @@ account for data recovery and cleanup later (`RemovalPolicy.RETAIN`).
 ###### `policy`<sup>Required</sup> <a name="policy" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.applyRemovalPolicy.parameter.policy"></a>
 
 - *Type:* aws-cdk-lib.RemovalPolicy
+
+---
+
+##### `addEndpoint` <a name="addEndpoint" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.addEndpoint"></a>
+
+```typescript
+public addEndpoint(id: string, options: AddWebFunctionEndpointOptions): WebFunctionEndpoint
+```
+
+Adds an endpoint (up to 10 per function), e.g. a public one next to an IAM-only one, or one pinned to an earlier revision. Each endpoint has its own URL, authentication, regions and limits.
+
+###### `id`<sup>Required</sup> <a name="id" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.addEndpoint.parameter.id"></a>
+
+- *Type:* string
+
+the endpoint's construct ID, also used in its generated name (`<id>-<hash>`).
+
+---
+
+###### `options`<sup>Required</sup> <a name="options" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.addEndpoint.parameter.options"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions">AddWebFunctionEndpointOptions</a>
 
 ---
 
@@ -693,9 +757,10 @@ Check whether the given construct is a Resource.
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.env">env</a></code> | <code>aws-cdk-lib.interfaces.ResourceEnvironment</code> | The environment this resource belongs to. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.stack">stack</a></code> | <code>aws-cdk-lib.Stack</code> | The stack in which this resource is defined. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a></code> | The function's endpoint. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.currentRevision">currentRevision</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a></code> | The revision built from the current code and configuration. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a></code> | The default endpoint. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.grantPrincipal">grantPrincipal</a></code> | <code>aws-cdk-lib.aws_iam.IPrincipal</code> | The principal to grant permissions to (the execution role). |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.grants">grants</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a></code> | Grants on the function (e.g. `grants.invoke(principal)`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.grants">grants</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a></code> | Grants on the default endpoint (e.g. `grants.invoke(principal)`). Other endpoints have their own `grants`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.logGroup">logGroup</a></code> | <code>aws-cdk-lib.aws_logs.ILogGroup</code> | The home-region log group that receives the logs of every region the function serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.revisionId">revisionId</a></code> | <code>string</code> | The ID of the current revision. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.role">role</a></code> | <code>aws-cdk-lib.aws_iam.IRole</code> | The execution role. |
@@ -749,6 +814,18 @@ The stack in which this resource is defined.
 
 ---
 
+##### `currentRevision`<sup>Required</sup> <a name="currentRevision" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.currentRevision"></a>
+
+```typescript
+public readonly currentRevision: IWebFunctionRevision;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a>
+
+The revision built from the current code and configuration.
+
+---
+
 ##### `endpoint`<sup>Required</sup> <a name="endpoint" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.endpoint"></a>
 
 ```typescript
@@ -757,7 +834,9 @@ public readonly endpoint: WebFunctionEndpoint;
 
 - *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a>
 
-The function's endpoint.
+The default endpoint.
+
+Add more with `addEndpoint`.
 
 ---
 
@@ -781,7 +860,7 @@ public readonly grants: WebFunctionGrants;
 
 - *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a>
 
-Grants on the function (e.g. `grants.invoke(principal)`).
+Grants on the default endpoint (e.g. `grants.invoke(principal)`). Other endpoints have their own `grants`.
 
 ---
 
@@ -808,6 +887,8 @@ public readonly revisionId: string;
 - *Type:* string
 
 The ID of the current revision.
+
+Same as `currentRevision.revisionId`.
 
 ---
 
@@ -862,9 +943,9 @@ A reference to this function, for APIs that accept `lambda.IWebFunctionRef`.
 
 ### WebFunctionEndpoint <a name="WebFunctionEndpoint" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint"></a>
 
-The HTTPS endpoint of a Web Function. Created by `WebFunction`; access it as `fn.endpoint`.
+An HTTPS endpoint of a Web Function: `fn.endpoint` (the default one) or the result of `fn.addEndpoint()`.
 
-Only `WebFunction` creates endpoints in this version (one per function), so the constructor is private.
+Endpoints are created only through `WebFunction`, which owns their log groups in every region, so the constructor is private.
 
 #### Methods <a name="Methods" id="Methods"></a>
 
@@ -872,7 +953,9 @@ Only `WebFunction` creates endpoints in this version (one per function), so the 
 | --- | --- |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.toString">toString</a></code> | Returns a string representation of this construct. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.with">with</a></code> | Applies one or more mixins to this construct. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.grantInvoke">grantInvoke</a></code> | Allows `grantee` to call this endpoint. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.regionalUrl">regionalUrl</a></code> | The URL of this endpoint in one region. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.routeTraffic">routeTraffic</a></code> | Routes the endpoint to `revision` instead of the function's current revision, optionally sharing traffic with one more revision (`additionalRevisions`, which gets its weight; |
 
 ---
 
@@ -905,6 +988,23 @@ The mixins to apply.
 
 ---
 
+##### `grantInvoke` <a name="grantInvoke" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.grantInvoke"></a>
+
+```typescript
+public grantInvoke(grantee: IGrantable): Grant
+```
+
+Allows `grantee` to call this endpoint.
+
+Shortcut for `grants.invoke(grantee)`.
+[disable-awslint:no-grants]
+
+###### `grantee`<sup>Required</sup> <a name="grantee" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.grantInvoke.parameter.grantee"></a>
+
+- *Type:* aws-cdk-lib.aws_iam.IGrantable
+
+---
+
 ##### `regionalUrl` <a name="regionalUrl" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.regionalUrl"></a>
 
 ```typescript
@@ -920,6 +1020,33 @@ Only for `PER_REGION` endpoints.
 - *Type:* string
 
 one of `regions`.
+
+---
+
+##### `routeTraffic` <a name="routeTraffic" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.routeTraffic"></a>
+
+```typescript
+public routeTraffic(revision: IWebFunctionRevision, additionalRevisions?: WebFunctionRevisionWeight[]): void
+```
+
+Routes the endpoint to `revision` instead of the function's current revision, optionally sharing traffic with one more revision (`additionalRevisions`, which gets its weight;
+
+`revision` gets the rest).
+
+Use it to keep an endpoint on an earlier revision (`WebFunctionRevision.fromRevisionAttributes`),
+or to send part of the traffic to the current revision:
+`fn.endpoint.routeTraffic(previous, [{ revision: fn.currentRevision, weight: 0.1 }])`.
+Can be called once per endpoint, and not on one created with `revision` or `additionalRevisions`.
+
+###### `revision`<sup>Required</sup> <a name="revision" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.routeTraffic.parameter.revision"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a>
+
+---
+
+###### `additionalRevisions`<sup>Optional</sup> <a name="additionalRevisions" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.routeTraffic.parameter.additionalRevisions"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight">WebFunctionRevisionWeight</a>[]
 
 ---
 
@@ -968,10 +1095,12 @@ Any object.
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.authType">authType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAuthType">WebFunctionAuthType</a></code> | How callers of the endpoint are authenticated. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.domainName">domainName</a></code> | <code>string</code> | The endpoint's domain name: the global domain for `MULTI_REGION`, otherwise the home region's. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.endpointArn">endpointArn</a></code> | <code>string</code> | The endpoint's ARN. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.endpointName">endpointName</a></code> | <code>string</code> | The endpoint's name. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.endpointType">endpointType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointType">WebFunctionEndpointType</a></code> | Where the endpoint serves traffic from. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.grants">grants</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a></code> | Grants on this endpoint (e.g. `grants.invoke(principal)`). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.regions">regions</a></code> | <code>string[]</code> | Every region the endpoint serves from: the home region first, then the others in alphabetical order. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.url">url</a></code> | <code>string</code> | The endpoint's URL: the global URL for `MULTI_REGION`, otherwise the home region's. |
 
@@ -986,6 +1115,18 @@ public readonly node: Node;
 - *Type:* constructs.Node
 
 The tree node.
+
+---
+
+##### `authType`<sup>Required</sup> <a name="authType" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.authType"></a>
+
+```typescript
+public readonly authType: WebFunctionAuthType;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAuthType">WebFunctionAuthType</a>
+
+How callers of the endpoint are authenticated.
 
 ---
 
@@ -1037,6 +1178,18 @@ Where the endpoint serves traffic from.
 
 ---
 
+##### `grants`<sup>Required</sup> <a name="grants" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.grants"></a>
+
+```typescript
+public readonly grants: WebFunctionGrants;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a>
+
+Grants on this endpoint (e.g. `grants.invoke(principal)`).
+
+---
+
 ##### `regions`<sup>Required</sup> <a name="regions" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.regions"></a>
 
 ```typescript
@@ -1062,7 +1215,348 @@ The endpoint's URL: the global URL for `MULTI_REGION`, otherwise the home region
 ---
 
 
+### WebFunctionRevision <a name="WebFunctionRevision" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision"></a>
+
+- *Implements:* <a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a>
+
+A revision of a Web Function.
+
+`WebFunction` creates its current revision (`fn.currentRevision`) from its code and configuration.
+Use `fromRevisionAttributes` to route an endpoint to an earlier one, which must still exist:
+only revisions within `revisionRetention`, or that an endpoint routes to, are kept.
+
+#### Methods <a name="Methods" id="Methods"></a>
+
+| **Name** | **Description** |
+| --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.toString">toString</a></code> | Returns a string representation of this construct. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.with">with</a></code> | Applies one or more mixins to this construct. |
+
+---
+
+##### `toString` <a name="toString" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.toString"></a>
+
+```typescript
+public toString(): string
+```
+
+Returns a string representation of this construct.
+
+##### `with` <a name="with" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.with"></a>
+
+```typescript
+public with(mixins: ...IMixin[]): IConstruct
+```
+
+Applies one or more mixins to this construct.
+
+Mixins are applied in order. The list of constructs is captured at the
+start of the call, so constructs added by a mixin will not be visited.
+Use multiple `with()` calls if subsequent mixins should apply to added
+constructs.
+
+###### `mixins`<sup>Required</sup> <a name="mixins" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.with.parameter.mixins"></a>
+
+- *Type:* ...constructs.IMixin[]
+
+The mixins to apply.
+
+---
+
+#### Static Functions <a name="Static Functions" id="Static Functions"></a>
+
+| **Name** | **Description** |
+| --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.isConstruct">isConstruct</a></code> | Checks if `x` is a construct. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.fromRevisionAttributes">fromRevisionAttributes</a></code> | References an existing revision of `webFunction`, e.g. to pin an endpoint to it or split traffic with it. |
+
+---
+
+##### `isConstruct` <a name="isConstruct" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.isConstruct"></a>
+
+```typescript
+import { WebFunctionRevision } from '@ashishpandeyone/cdk-lambda-web-function'
+
+WebFunctionRevision.isConstruct(x: any)
+```
+
+Checks if `x` is a construct.
+
+Use this method instead of `instanceof` to properly detect `Construct`
+instances, even when the construct library is symlinked.
+
+Explanation: in JavaScript, multiple copies of the `constructs` library on
+disk are seen as independent, completely different libraries. As a
+consequence, the class `Construct` in each copy of the `constructs` library
+is seen as a different class, and an instance of one class will not test as
+`instanceof` the other class. `npm install` will not create installations
+like this, but users may manually symlink construct libraries together or
+use a monorepo tool: in those cases, multiple copies of the `constructs`
+library can be accidentally installed, and `instanceof` will behave
+unpredictably. It is safest to avoid using `instanceof`, and using
+this type-testing method instead.
+
+###### `x`<sup>Required</sup> <a name="x" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.isConstruct.parameter.x"></a>
+
+- *Type:* any
+
+Any object.
+
+---
+
+##### `fromRevisionAttributes` <a name="fromRevisionAttributes" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.fromRevisionAttributes"></a>
+
+```typescript
+import { WebFunctionRevision } from '@ashishpandeyone/cdk-lambda-web-function'
+
+WebFunctionRevision.fromRevisionAttributes(scope: Construct, id: string, attrs: WebFunctionRevisionAttributes)
+```
+
+References an existing revision of `webFunction`, e.g. to pin an endpoint to it or split traffic with it.
+
+###### `scope`<sup>Required</sup> <a name="scope" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.fromRevisionAttributes.parameter.scope"></a>
+
+- *Type:* constructs.Construct
+
+---
+
+###### `id`<sup>Required</sup> <a name="id" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.fromRevisionAttributes.parameter.id"></a>
+
+- *Type:* string
+
+---
+
+###### `attrs`<sup>Required</sup> <a name="attrs" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.fromRevisionAttributes.parameter.attrs"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionAttributes">WebFunctionRevisionAttributes</a>
+
+---
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.property.revisionArn">revisionArn</a></code> | <code>string</code> | The revision's ARN. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.property.revisionId">revisionId</a></code> | <code>string</code> | The revision's ID, e.g. `rev-a1b2c`. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.property.webFunction">webFunction</a></code> | <code>aws-cdk-lib.interfaces.aws_lambda.IWebFunctionRef</code> | The function the revision belongs to. |
+
+---
+
+##### `node`<sup>Required</sup> <a name="node" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.property.node"></a>
+
+```typescript
+public readonly node: Node;
+```
+
+- *Type:* constructs.Node
+
+The tree node.
+
+---
+
+##### `revisionArn`<sup>Required</sup> <a name="revisionArn" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.property.revisionArn"></a>
+
+```typescript
+public readonly revisionArn: string;
+```
+
+- *Type:* string
+
+The revision's ARN.
+
+---
+
+##### `revisionId`<sup>Required</sup> <a name="revisionId" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.property.revisionId"></a>
+
+```typescript
+public readonly revisionId: string;
+```
+
+- *Type:* string
+
+The revision's ID, e.g. `rev-a1b2c`.
+
+---
+
+##### `webFunction`<sup>Required</sup> <a name="webFunction" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision.property.webFunction"></a>
+
+```typescript
+public readonly webFunction: IWebFunctionRef;
+```
+
+- *Type:* aws-cdk-lib.interfaces.aws_lambda.IWebFunctionRef
+
+The function the revision belongs to.
+
+---
+
+
 ## Structs <a name="Structs" id="Structs"></a>
+
+### AddWebFunctionEndpointOptions <a name="AddWebFunctionEndpointOptions" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions"></a>
+
+Options for `WebFunction.addEndpoint`.
+
+#### Initializer <a name="Initializer" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.Initializer"></a>
+
+```typescript
+import { AddWebFunctionEndpointOptions } from '@ashishpandeyone/cdk-lambda-web-function'
+
+const addWebFunctionEndpointOptions: AddWebFunctionEndpointOptions = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.description">description</a></code> | <code>string</code> | A description of the endpoint. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.endpointName">endpointName</a></code> | <code>string</code> | The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header. Names are unique per function. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.endpointType">endpointType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointType">WebFunctionEndpointType</a></code> | Where the endpoint serves traffic from. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.maxEnvironments">maxEnvironments</a></code> | <code>number</code> | The most execution environments the endpoint may use (2–10,000). Each one uses 2 vCPUs of the account's quota. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.rateLimit">rateLimit</a></code> | <code>number</code> | The most requests per second the endpoint accepts; |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.regions">regions</a></code> | <code>string[]</code> | Regions to serve from in addition to the home region (the stack's region). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.authType">authType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAuthType">WebFunctionAuthType</a></code> | How callers of this endpoint are authenticated. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.additionalRevisions">additionalRevisions</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight">WebFunctionRevisionWeight</a>[]</code> | A second revision and its share of the endpoint's traffic; |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.revision">revision</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a></code> | The revision the endpoint serves, e.g. an earlier one from `WebFunctionRevision.fromRevisionAttributes` to keep this endpoint on it while others move on. Same as calling `routeTraffic`. |
+
+---
+
+##### `description`<sup>Optional</sup> <a name="description" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.description"></a>
+
+```typescript
+public readonly description: string;
+```
+
+- *Type:* string
+- *Default:* no description
+
+A description of the endpoint.
+
+---
+
+##### `endpointName`<sup>Optional</sup> <a name="endpointName" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.endpointName"></a>
+
+```typescript
+public readonly endpointName: string;
+```
+
+- *Type:* string
+- *Default:* `default-<hash>` for the function's default endpoint, `<id>-<hash>` for endpoints added with `addEndpoint`
+
+The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header. Names are unique per function.
+
+When omitted, the name ends in a hash of the endpoint type and regions, so changing either deploys
+a new endpoint cleanly. When set, changing the endpoint type or regions also requires a new name:
+two endpoints of one function can't share a name, and CloudFormation creates the replacement
+before deleting the old one.
+
+---
+
+##### `endpointType`<sup>Optional</sup> <a name="endpointType" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.endpointType"></a>
+
+```typescript
+public readonly endpointType: WebFunctionEndpointType;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointType">WebFunctionEndpointType</a>
+- *Default:* WebFunctionEndpointType.HOME_REGION
+
+Where the endpoint serves traffic from.
+
+---
+
+##### `maxEnvironments`<sup>Optional</sup> <a name="maxEnvironments" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.maxEnvironments"></a>
+
+```typescript
+public readonly maxEnvironments: number;
+```
+
+- *Type:* number
+- *Default:* scales within the account's vCPU quota
+
+The most execution environments the endpoint may use (2–10,000). Each one uses 2 vCPUs of the account's quota.
+
+Enforced separately in each region the endpoint serves from.
+
+---
+
+##### `rateLimit`<sup>Optional</sup> <a name="rateLimit" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.rateLimit"></a>
+
+```typescript
+public readonly rateLimit: number;
+```
+
+- *Type:* number
+- *Default:* no limit beyond the service quota of 10,000 requests per second per endpoint (per region)
+
+The most requests per second the endpoint accepts;
+
+excess requests get HTTP 429.
+Allowed: 0 (blocks all traffic), 100–1,000 in steps of 100, or 2,000–10,000 in steps of 1,000.
+
+Enforced separately in each region the endpoint serves from, so a multi-region endpoint
+can accept this many requests per second in every region.
+
+---
+
+##### `regions`<sup>Optional</sup> <a name="regions" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.regions"></a>
+
+```typescript
+public readonly regions: string[];
+```
+
+- *Type:* string[]
+- *Default:* no extra regions
+
+Regions to serve from in addition to the home region (the stack's region).
+
+Required (at least one) for `MULTI_REGION` and `PER_REGION`; must be empty for `HOME_REGION`.
+
+Changing this creates a new endpoint with a new URL.
+
+---
+
+##### `authType`<sup>Required</sup> <a name="authType" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.authType"></a>
+
+```typescript
+public readonly authType: WebFunctionAuthType;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAuthType">WebFunctionAuthType</a>
+
+How callers of this endpoint are authenticated.
+
+---
+
+##### `additionalRevisions`<sup>Optional</sup> <a name="additionalRevisions" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.additionalRevisions"></a>
+
+```typescript
+public readonly additionalRevisions: WebFunctionRevisionWeight[];
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight">WebFunctionRevisionWeight</a>[]
+- *Default:* all traffic goes to `revision`
+
+A second revision and its share of the endpoint's traffic;
+
+`revision` gets the rest.
+An endpoint routes to at most two revisions.
+
+---
+
+##### `revision`<sup>Optional</sup> <a name="revision" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.revision"></a>
+
+```typescript
+public readonly revision: IWebFunctionRevision;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a>
+- *Default:* the function's current revision (`currentRevision`)
+
+The revision the endpoint serves, e.g. an earlier one from `WebFunctionRevision.fromRevisionAttributes` to keep this endpoint on it while others move on. Same as calling `routeTraffic`.
+
+---
 
 ### NodejsWebFunctionBundlingOptions <a name="NodejsWebFunctionBundlingOptions" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionBundlingOptions"></a>
 
@@ -1318,11 +1812,12 @@ const nodejsWebFunctionProps: NodejsWebFunctionProps = { ... }
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.authType">authType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAuthType">WebFunctionAuthType</a></code> | How callers of the endpoint are authenticated. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.applicationLogLevelV2">applicationLogLevelV2</a></code> | <code>aws-cdk-lib.aws_lambda.ApplicationLogLevel</code> | The minimum level of application logs to keep. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.description">description</a></code> | <code>string</code> | A description of the function's code and configuration. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The endpoint: where it serves from, and its name. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.environment">environment</a></code> | <code>{[ key: string ]: string}</code> | Environment variables. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.logRemovalPolicy">logRemovalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | What happens to the log groups when the function is removed: RETAIN or DESTROY. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.logRetention">logRetention</a></code> | <code>aws-cdk-lib.aws_logs.RetentionDays</code> | Retention for every log group of the function, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.maxConcurrencyPerEnvironment">maxConcurrencyPerEnvironment</a></code> | <code>number</code> | How many requests one execution environment handles at the same time (1-128). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.revisionRetention">revisionRetention</a></code> | <code>number</code> | How many of the newest revisions to keep (1-50). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.role">role</a></code> | <code>aws-cdk-lib.aws_iam.IRole</code> | The execution role. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.systemLogLevelV2">systemLogLevelV2</a></code> | <code>aws-cdk-lib.aws_lambda.SystemLogLevel</code> | The minimum level of platform logs to keep (DEBUG, INFO or WARN). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.timeout">timeout</a></code> | <code>aws-cdk-lib.Duration</code> | How long a single request may run. |
@@ -1380,9 +1875,9 @@ public readonly endpoint: WebFunctionEndpointOptions;
 ```
 
 - *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a>
-- *Default:* a HOME_REGION endpoint
+- *Default:* a HOME_REGION endpoint serving the current revision
 
-The endpoint: where it serves from, and its name.
+The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`.
 
 ---
 
@@ -1441,6 +1936,26 @@ public readonly maxConcurrencyPerEnvironment: number;
 How many requests one execution environment handles at the same time (1-128).
 
 Requests share module-level state, so handlers must be concurrency-safe.
+
+---
+
+##### `revisionRetention`<sup>Optional</sup> <a name="revisionRetention" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.revisionRetention"></a>
+
+```typescript
+public readonly revisionRetention: number;
+```
+
+- *Type:* number
+- *Default:* 20
+
+How many of the newest revisions to keep (1-50).
+
+Each deployment that changes the code or
+configuration creates a revision; older ones stay available to roll back to or route traffic to,
+and the oldest beyond this count are deleted after each deployment.
+
+Revisions that an endpoint routes to are never deleted, and neither are those the previous
+deployment used (a rollback returns to them).
 
 ---
 
@@ -1585,9 +2100,25 @@ const webFunctionEndpointOptions: WebFunctionEndpointOptions = { ... }
 
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.endpointName">endpointName</a></code> | <code>string</code> | The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.description">description</a></code> | <code>string</code> | A description of the endpoint. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.endpointName">endpointName</a></code> | <code>string</code> | The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header. Names are unique per function. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.endpointType">endpointType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointType">WebFunctionEndpointType</a></code> | Where the endpoint serves traffic from. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.maxEnvironments">maxEnvironments</a></code> | <code>number</code> | The most execution environments the endpoint may use (2–10,000). Each one uses 2 vCPUs of the account's quota. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.rateLimit">rateLimit</a></code> | <code>number</code> | The most requests per second the endpoint accepts; |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.regions">regions</a></code> | <code>string[]</code> | Regions to serve from in addition to the home region (the stack's region). |
+
+---
+
+##### `description`<sup>Optional</sup> <a name="description" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.description"></a>
+
+```typescript
+public readonly description: string;
+```
+
+- *Type:* string
+- *Default:* no description
+
+A description of the endpoint.
 
 ---
 
@@ -1598,14 +2129,14 @@ public readonly endpointName: string;
 ```
 
 - *Type:* string
-- *Default:* `default-<hash of type and regions>`
+- *Default:* `default-<hash>` for the function's default endpoint, `<id>-<hash>` for endpoints added with `addEndpoint`
 
-The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header.
+The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header. Names are unique per function.
 
-When omitted, the name is `default-<hash>`, with the hash covering the endpoint type and regions,
-so changing either deploys a new endpoint cleanly. When set, changing the endpoint type or
-regions also requires a new name: two endpoints of one function can't share a name, and
-CloudFormation creates the replacement before deleting the old one.
+When omitted, the name ends in a hash of the endpoint type and regions, so changing either deploys
+a new endpoint cleanly. When set, changing the endpoint type or regions also requires a new name:
+two endpoints of one function can't share a name, and CloudFormation creates the replacement
+before deleting the old one.
 
 ---
 
@@ -1619,6 +2150,40 @@ public readonly endpointType: WebFunctionEndpointType;
 - *Default:* WebFunctionEndpointType.HOME_REGION
 
 Where the endpoint serves traffic from.
+
+---
+
+##### `maxEnvironments`<sup>Optional</sup> <a name="maxEnvironments" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.maxEnvironments"></a>
+
+```typescript
+public readonly maxEnvironments: number;
+```
+
+- *Type:* number
+- *Default:* scales within the account's vCPU quota
+
+The most execution environments the endpoint may use (2–10,000). Each one uses 2 vCPUs of the account's quota.
+
+Enforced separately in each region the endpoint serves from.
+
+---
+
+##### `rateLimit`<sup>Optional</sup> <a name="rateLimit" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.rateLimit"></a>
+
+```typescript
+public readonly rateLimit: number;
+```
+
+- *Type:* number
+- *Default:* no limit beyond the service quota of 10,000 requests per second per endpoint (per region)
+
+The most requests per second the endpoint accepts;
+
+excess requests get HTTP 429.
+Allowed: 0 (blocks all traffic), 100–1,000 in steps of 100, or 2,000–10,000 in steps of 1,000.
+
+Enforced separately in each region the endpoint serves from, so a multi-region endpoint
+can accept this many requests per second in every region.
 
 ---
 
@@ -1658,11 +2223,12 @@ const webFunctionOptions: WebFunctionOptions = { ... }
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.authType">authType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAuthType">WebFunctionAuthType</a></code> | How callers of the endpoint are authenticated. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.applicationLogLevelV2">applicationLogLevelV2</a></code> | <code>aws-cdk-lib.aws_lambda.ApplicationLogLevel</code> | The minimum level of application logs to keep. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.description">description</a></code> | <code>string</code> | A description of the function's code and configuration. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The endpoint: where it serves from, and its name. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.environment">environment</a></code> | <code>{[ key: string ]: string}</code> | Environment variables. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.logRemovalPolicy">logRemovalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | What happens to the log groups when the function is removed: RETAIN or DESTROY. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.logRetention">logRetention</a></code> | <code>aws-cdk-lib.aws_logs.RetentionDays</code> | Retention for every log group of the function, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.maxConcurrencyPerEnvironment">maxConcurrencyPerEnvironment</a></code> | <code>number</code> | How many requests one execution environment handles at the same time (1-128). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.revisionRetention">revisionRetention</a></code> | <code>number</code> | How many of the newest revisions to keep (1-50). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.role">role</a></code> | <code>aws-cdk-lib.aws_iam.IRole</code> | The execution role. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.systemLogLevelV2">systemLogLevelV2</a></code> | <code>aws-cdk-lib.aws_lambda.SystemLogLevel</code> | The minimum level of platform logs to keep (DEBUG, INFO or WARN). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.timeout">timeout</a></code> | <code>aws-cdk-lib.Duration</code> | How long a single request may run. |
@@ -1715,9 +2281,9 @@ public readonly endpoint: WebFunctionEndpointOptions;
 ```
 
 - *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a>
-- *Default:* a HOME_REGION endpoint
+- *Default:* a HOME_REGION endpoint serving the current revision
 
-The endpoint: where it serves from, and its name.
+The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`.
 
 ---
 
@@ -1776,6 +2342,26 @@ public readonly maxConcurrencyPerEnvironment: number;
 How many requests one execution environment handles at the same time (1-128).
 
 Requests share module-level state, so handlers must be concurrency-safe.
+
+---
+
+##### `revisionRetention`<sup>Optional</sup> <a name="revisionRetention" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.revisionRetention"></a>
+
+```typescript
+public readonly revisionRetention: number;
+```
+
+- *Type:* number
+- *Default:* 20
+
+How many of the newest revisions to keep (1-50).
+
+Each deployment that changes the code or
+configuration creates a revision; older ones stay available to roll back to or route traffic to,
+and the oldest beyond this count are deleted after each deployment.
+
+Revisions that an endpoint routes to are never deleted, and neither are those the previous
+deployment used (a rollback returns to them).
 
 ---
 
@@ -1855,11 +2441,12 @@ const webFunctionProps: WebFunctionProps = { ... }
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.authType">authType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAuthType">WebFunctionAuthType</a></code> | How callers of the endpoint are authenticated. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.applicationLogLevelV2">applicationLogLevelV2</a></code> | <code>aws-cdk-lib.aws_lambda.ApplicationLogLevel</code> | The minimum level of application logs to keep. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.description">description</a></code> | <code>string</code> | A description of the function's code and configuration. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The endpoint: where it serves from, and its name. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.environment">environment</a></code> | <code>{[ key: string ]: string}</code> | Environment variables. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.logRemovalPolicy">logRemovalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | What happens to the log groups when the function is removed: RETAIN or DESTROY. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.logRetention">logRetention</a></code> | <code>aws-cdk-lib.aws_logs.RetentionDays</code> | Retention for every log group of the function, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.maxConcurrencyPerEnvironment">maxConcurrencyPerEnvironment</a></code> | <code>number</code> | How many requests one execution environment handles at the same time (1-128). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.revisionRetention">revisionRetention</a></code> | <code>number</code> | How many of the newest revisions to keep (1-50). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.role">role</a></code> | <code>aws-cdk-lib.aws_iam.IRole</code> | The execution role. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.systemLogLevelV2">systemLogLevelV2</a></code> | <code>aws-cdk-lib.aws_lambda.SystemLogLevel</code> | The minimum level of platform logs to keep (DEBUG, INFO or WARN). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.timeout">timeout</a></code> | <code>aws-cdk-lib.Duration</code> | How long a single request may run. |
@@ -1915,9 +2502,9 @@ public readonly endpoint: WebFunctionEndpointOptions;
 ```
 
 - *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a>
-- *Default:* a HOME_REGION endpoint
+- *Default:* a HOME_REGION endpoint serving the current revision
 
-The endpoint: where it serves from, and its name.
+The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`.
 
 ---
 
@@ -1976,6 +2563,26 @@ public readonly maxConcurrencyPerEnvironment: number;
 How many requests one execution environment handles at the same time (1-128).
 
 Requests share module-level state, so handlers must be concurrency-safe.
+
+---
+
+##### `revisionRetention`<sup>Optional</sup> <a name="revisionRetention" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.revisionRetention"></a>
+
+```typescript
+public readonly revisionRetention: number;
+```
+
+- *Type:* number
+- *Default:* 20
+
+How many of the newest revisions to keep (1-50).
+
+Each deployment that changes the code or
+configuration creates a revision; older ones stay available to roll back to or route traffic to,
+and the oldest beyond this count are deleted after each deployment.
+
+Revisions that an endpoint routes to are never deleted, and neither are those the previous
+deployment used (a rollback returns to them).
 
 ---
 
@@ -2075,19 +2682,109 @@ The file that starts your server, relative to the root of the code.
 
 ---
 
+### WebFunctionRevisionAttributes <a name="WebFunctionRevisionAttributes" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionAttributes"></a>
+
+Attributes of an existing revision.
+
+#### Initializer <a name="Initializer" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionAttributes.Initializer"></a>
+
+```typescript
+import { WebFunctionRevisionAttributes } from '@ashishpandeyone/cdk-lambda-web-function'
+
+const webFunctionRevisionAttributes: WebFunctionRevisionAttributes = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionAttributes.property.revisionId">revisionId</a></code> | <code>string</code> | The revision's ID, e.g. `rev-a1b2c` (the `revisionId` of an earlier deployment). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionAttributes.property.webFunction">webFunction</a></code> | <code>aws-cdk-lib.interfaces.aws_lambda.IWebFunctionRef</code> | The function the revision belongs to. |
+
+---
+
+##### `revisionId`<sup>Required</sup> <a name="revisionId" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionAttributes.property.revisionId"></a>
+
+```typescript
+public readonly revisionId: string;
+```
+
+- *Type:* string
+
+The revision's ID, e.g. `rev-a1b2c` (the `revisionId` of an earlier deployment).
+
+---
+
+##### `webFunction`<sup>Required</sup> <a name="webFunction" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionAttributes.property.webFunction"></a>
+
+```typescript
+public readonly webFunction: IWebFunctionRef;
+```
+
+- *Type:* aws-cdk-lib.interfaces.aws_lambda.IWebFunctionRef
+
+The function the revision belongs to.
+
+---
+
+### WebFunctionRevisionWeight <a name="WebFunctionRevisionWeight" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight"></a>
+
+A revision and the share of an endpoint's traffic it receives.
+
+#### Initializer <a name="Initializer" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight.Initializer"></a>
+
+```typescript
+import { WebFunctionRevisionWeight } from '@ashishpandeyone/cdk-lambda-web-function'
+
+const webFunctionRevisionWeight: WebFunctionRevisionWeight = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight.property.revision">revision</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a></code> | The revision. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight.property.weight">weight</a></code> | <code>number</code> | The revision's share of the endpoint's traffic, as a fraction (like `lambda.Alias` `additionalVersions`). Must be a whole percentage from 0.01 to 0.99. |
+
+---
+
+##### `revision`<sup>Required</sup> <a name="revision" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight.property.revision"></a>
+
+```typescript
+public readonly revision: IWebFunctionRevision;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a>
+
+The revision.
+
+---
+
+##### `weight`<sup>Required</sup> <a name="weight" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight.property.weight"></a>
+
+```typescript
+public readonly weight: number;
+```
+
+- *Type:* number
+
+The revision's share of the endpoint's traffic, as a fraction (like `lambda.Alias` `additionalVersions`). Must be a whole percentage from 0.01 to 0.99.
+
+---
+
 ## Classes <a name="Classes" id="Classes"></a>
 
 ### WebFunctionGrants <a name="WebFunctionGrants" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants"></a>
 
-Grants on a Web Function.
+Grants on a Web Function endpoint.
 
-Access it as `fn.grants`.
+Access them as `fn.grants` (the default endpoint) or `endpoint.grants`.
 
 #### Methods <a name="Methods" id="Methods"></a>
 
 | **Name** | **Description** |
 | --- | --- |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants.invoke">invoke</a></code> | Allows `grantee` to call the function's endpoint (`lambda:InvokeWebFunctionEndpoint`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants.invoke">invoke</a></code> | Allows `grantee` to call the endpoint (`lambda:InvokeWebFunctionEndpoint`). |
 
 ---
 
@@ -2097,7 +2794,7 @@ Access it as `fn.grants`.
 public invoke(grantee: IGrantable): Grant
 ```
 
-Allows `grantee` to call the function's endpoint (`lambda:InvokeWebFunctionEndpoint`).
+Allows `grantee` to call the endpoint (`lambda:InvokeWebFunctionEndpoint`).
 
 The grant is on the endpoint's home-region ARN, which IAM evaluates for every region the
 endpoint serves from, including a MULTI_REGION global URL.
@@ -2212,6 +2909,74 @@ public readonly webFunctionName: string;
 - *Type:* string
 
 The function's name.
+
+---
+
+### IWebFunctionRevision <a name="IWebFunctionRevision" id="@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision"></a>
+
+- *Extends:* constructs.IConstruct
+
+- *Implemented By:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision">WebFunctionRevision</a>, <a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a>
+
+A revision of a Web Function: an immutable snapshot of its code and configuration.
+
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision.property.node">node</a></code> | <code>constructs.Node</code> | The tree node. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision.property.revisionArn">revisionArn</a></code> | <code>string</code> | The revision's ARN. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision.property.revisionId">revisionId</a></code> | <code>string</code> | The revision's ID, e.g. `rev-a1b2c`. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision.property.webFunction">webFunction</a></code> | <code>aws-cdk-lib.interfaces.aws_lambda.IWebFunctionRef</code> | The function the revision belongs to. |
+
+---
+
+##### `node`<sup>Required</sup> <a name="node" id="@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision.property.node"></a>
+
+```typescript
+public readonly node: Node;
+```
+
+- *Type:* constructs.Node
+
+The tree node.
+
+---
+
+##### `revisionArn`<sup>Required</sup> <a name="revisionArn" id="@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision.property.revisionArn"></a>
+
+```typescript
+public readonly revisionArn: string;
+```
+
+- *Type:* string
+
+The revision's ARN.
+
+---
+
+##### `revisionId`<sup>Required</sup> <a name="revisionId" id="@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision.property.revisionId"></a>
+
+```typescript
+public readonly revisionId: string;
+```
+
+- *Type:* string
+
+The revision's ID, e.g. `rev-a1b2c`.
+
+---
+
+##### `webFunction`<sup>Required</sup> <a name="webFunction" id="@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision.property.webFunction"></a>
+
+```typescript
+public readonly webFunction: IWebFunctionRef;
+```
+
+- *Type:* aws-cdk-lib.interfaces.aws_lambda.IWebFunctionRef
+
+The function the revision belongs to.
 
 ---
 

@@ -50,3 +50,17 @@ export interface EndpointLookupProperties {
 export function regionalDomainAttribute(region: string): string {
   return `Domain.${region}`;
 }
+
+/** Deletes a function's oldest revisions beyond a count, except those that are in use or may be rolled back to. */
+export const REVISION_CLEANUP_RESOURCE_TYPE = 'Custom::LambdaWebRevisionCleanup';
+
+export interface RevisionCleanupProperties {
+  readonly FunctionArn: string;
+  /** How many of the newest revisions to keep. */
+  readonly Keep: string;
+  /**
+   * Revisions the template uses (the current one and any an endpoint routes to). Always kept, and on an update
+   * the previous template's are kept too: they're what a rollback routes back to.
+   */
+  readonly RevisionIds: string[];
+}

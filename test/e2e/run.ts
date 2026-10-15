@@ -32,7 +32,19 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Credentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
 type Outputs = Record<string, string>;
-interface Context { endpointType: string; regions: string[]; auth?: string; version?: string; kind?: string; bundling?: string }
+interface Context {
+  endpointType: string;
+  regions: string[];
+  auth?: string;
+  version?: string;
+  kind?: string;
+  bundling?: string;
+  appVersion?: string;
+  retention?: number;
+  endpoints?: string;
+  stable?: string;
+  split?: string;
+}
 
 class Scenario {
   public readonly results: { name: string; ok: boolean; detail: string }[] = [];
@@ -74,7 +86,9 @@ class Scenario {
     // Scenarios run in parallel, so each synthesizes into its own directory.
     return ['--app', 'npx tsx test/e2e/app.ts', '--output', this.outdir, '-c', `scenario=${this.id}`, '-c', `endpointType=${ctx.endpointType}`,
       '-c', `regions=${JSON.stringify(ctx.regions)}`, '-c', `auth=${ctx.auth ?? 'AWS_IAM'}`, '-c', `version=${ctx.version ?? 'v1'}`,
-      '-c', `kind=${ctx.kind ?? 'web'}`, '-c', `bundling=${ctx.bundling ?? 'local'}`];
+      '-c', `kind=${ctx.kind ?? 'web'}`, '-c', `bundling=${ctx.bundling ?? 'local'}`,
+      ...Object.entries({ appVersion: ctx.appVersion, retention: ctx.retention, endpoints: ctx.endpoints, stable: ctx.stable, split: ctx.split })
+        .filter(([, v]) => v !== undefined).flatMap(([k, v]) => ['-c', `${k}=${v}`])];
   }
 }
 
@@ -183,6 +197,11 @@ async function checkNothingLeft(s: Scenario, out: Outputs) {
   }
 }
 
+async function revisionIds(functionName: string): Promise<string[]> {
+  const r = await web.send(new ListWebFunctionRevisionsCommand({ functionName }));
+  return (r.revisions ?? []).map((rev) => rev.revisionId!).sort();
+}
+
 async function checkIamAccess(s: Scenario, url: string, out: Outputs, label: string) {
   const admin = await adminCredentials();
   const consumer = await assume(out.ConsumerRoleArn);
@@ -220,8 +239,8 @@ async function scenarioPerRegion(): Promise<Scenario> {
     s.check('code update served (v2)', v2.body?.version === 'v2', `version=${v2.body?.version}`);
     s.check('code update created a new revision', out.RevisionId !== before.RevisionId, `${before.RevisionId} -> ${out.RevisionId}`);
     s.check('endpoint URL unchanged by the code update', out.Url === before.Url);
-    const revisions = await web.send(new ListWebFunctionRevisionsCommand({ functionName: out.FunctionName }));
-    s.check('old revision deleted (one revision left)', (revisions.revisions ?? []).length === 1, `revisions=${(revisions.revisions ?? []).length}`);
+    s.check('old revision kept as a rollback target', JSON.stringify(await revisionIds(out.FunctionName)) === JSON.stringify([before.RevisionId, out.RevisionId].sort()),
+      (await revisionIds(out.FunctionName)).join(', '));
 
     // Add a region: the default endpoint name changes, so the endpoint is replaced cleanly.
     ctx = { ...ctx, regions: ['us-east-1', 'eu-west-1'] };
@@ -311,9 +330,79 @@ async function nodejsScenario(s: Scenario, bundling: 'local' | 'docker'): Promis
   return s;
 }
 
+async function scenarioEndpointsAndRevisions(): Promise<Scenario> {
+  const s = new Scenario('F', 'several endpoints, revision retention, pinning and a 50/50 split');
+  const base: Context = { endpointType: 'HOME_REGION', regions: [], endpoints: 'many', retention: 2 };
+  let ctx: Context = { ...base, appVersion: 'a1' };
+  let out: Outputs | undefined;
+  const admin = await adminCredentials();
+  const servedBy = async (url: string, signed: boolean) => (await callUntil(url, signed ? admin : undefined, 200, 120_000)).body?.appVersion;
+  const checkAllServe = async (o: Outputs, version: string) => {
+    s.check(`default endpoint (IAM) serves ${version}`, await servedBy(o.Url, true) === version);
+    s.check(`Public endpoint (NONE) serves ${version} unsigned`, await servedBy(o.PublicUrl, false) === version);
+    s.check(`Global endpoint (MULTI_REGION, IAM) serves ${version}`, await servedBy(o.GlobalUrl, true) === version);
+  };
+  try {
+    // 1. Three endpoints on one revision.
+    out = await s.deploy(ctx);
+    const r1 = out.RevisionId;
+    await checkAllServe(out, 'a1');
+    const endpoints = await web.send(new ListWebFunctionEndpointsCommand({ functionName: out.FunctionName }));
+    s.check('three endpoints', (endpoints.endpoints ?? []).length === 3, (endpoints.endpoints ?? []).map((e) => e.endpointName).join(', '));
+    const consumer = await assume(out.ConsumerRoleArn);
+    s.check('Global endpoint: role with endpoint.grantInvoke() is allowed', (await callUntil(out.GlobalUrl, consumer, 200)).status === 200);
+    const unsignedGlobal = await call(out.GlobalUrl);
+    s.check('Global endpoint: unsigned request rejected', unsignedGlobal.status === 403, `status=${unsignedGlobal.status}`);
+    const usLocal = await logGroup('us-east-1', `${out.LogGroupName}.local`);
+    s.check('us-east-1 .local group owned for the added endpoint', usLocal?.retentionInDays === RETENTION_DAYS, `retention=${usLocal?.retentionInDays ?? 'missing'}`);
+
+    // 2. A new revision; the previous one is kept.
+    ctx = { ...base, appVersion: 'a2' };
+    out = await s.deploy(ctx);
+    const r2 = out.RevisionId;
+    await checkAllServe(out, 'a2');
+    s.check('revisions after 2 deploys: both kept', JSON.stringify(await revisionIds(out.FunctionName)) === JSON.stringify([r1, r2].sort()), (await revisionIds(out.FunctionName)).join(', '));
+
+    // 3. Pin a Stable endpoint to r1 and split the default endpoint 50/50 between r2 and the new r3.
+    ctx = { ...base, appVersion: 'a3', stable: r1, split: r2 };
+    out = await s.deploy(ctx);
+    const r3 = out.RevisionId;
+    s.check('Stable endpoint pinned to the first revision serves a1', await servedBy(out.StableUrl, false) === 'a1');
+    s.check('Public endpoint follows the current revision (a3)', await servedBy(out.PublicUrl, false) === 'a3');
+    const seen = new Set<string>();
+    for (let i = 0; i < 24; i++) seen.add((await call(out.Url, admin)).body?.appVersion);
+    s.check('default endpoint splits traffic between a2 and a3', seen.has('a2') && seen.has('a3') && seen.size === 2, [...seen].join(', '));
+    s.check('revisions in use are kept beyond revisionRetention (3 > 2)', JSON.stringify(await revisionIds(out.FunctionName)) === JSON.stringify([r1, r2, r3].sort()),
+      (await revisionIds(out.FunctionName)).join(', '));
+
+    // 4. Remove the pin and the split: the previous deployment's revisions stay (rollback targets).
+    ctx = { ...base, appVersion: 'a4' };
+    out = await s.deploy(ctx);
+    const r4 = out.RevisionId;
+    await checkAllServe(out, 'a4');
+    const afterUnpin = await web.send(new ListWebFunctionEndpointsCommand({ functionName: out.FunctionName }));
+    s.check('Stable endpoint deleted', (afterUnpin.endpoints ?? []).length === 3);
+    s.check('the previous deployment\'s revisions are kept as rollback targets', JSON.stringify(await revisionIds(out.FunctionName)) === JSON.stringify([r1, r2, r3, r4].sort()),
+      (await revisionIds(out.FunctionName)).join(', '));
+
+    // 5. Next deployment: only the newest 2 remain.
+    ctx = { ...base, appVersion: 'a5' };
+    out = await s.deploy(ctx);
+    await checkAllServe(out, 'a5');
+    s.check('cleanup keeps the newest revisionRetention (2)', JSON.stringify(await revisionIds(out.FunctionName)) === JSON.stringify([r4, out.RevisionId].sort()),
+      (await revisionIds(out.FunctionName)).join(', '));
+  } catch (e) {
+    s.check('scenario ran to completion', false, (e as Error).message);
+  } finally {
+    await s.destroy(ctx).catch((e) => s.check('destroy', false, (e as Error).message));
+    if (out) await checkNothingLeft(s, out);
+  }
+  return s;
+}
+
 async function main() {
   const all: Record<string, () => Promise<Scenario>> = {
-    A: scenarioPerRegion, B: scenarioMultiRegion, C: scenarioPublicHome, D: scenarioNodejs, E: scenarioNodejsDocker,
+    A: scenarioPerRegion, B: scenarioMultiRegion, C: scenarioPublicHome, D: scenarioNodejs, E: scenarioNodejsDocker, F: scenarioEndpointsAndRevisions,
   };
   const selected = process.argv.slice(2).filter((a) => all[a]);
   const run = selected.length > 0 ? selected : Object.keys(all);
