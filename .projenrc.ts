@@ -1,4 +1,4 @@
-import { JsonFile, awscdk, javascript } from 'projen';
+import { JsonFile, ReleasableCommits, awscdk, javascript } from 'projen';
 
 const CDK_VERSION = '2.273.0';
 
@@ -26,6 +26,8 @@ const project = new awscdk.AwsCdkConstructLibrary({
   // Experimental until the API settles: 0.x releases, stability banner in the README.
   stability: 'experimental',
   majorVersion: 0,
+  // Only feat/fix commits produce a release; docs/chore/test commits don't publish a new version.
+  releasableCommits: ReleasableCommits.featuresAndFixes(),
   releaseToNpm: true,
   npmTrustedPublishing: true,
 
@@ -82,7 +84,11 @@ project.addTask('e2e', {
 new JsonFile(project, 'handlers/tsconfig.json', {
   obj: { extends: '../test/tsconfig.json', include: ['**/*.ts', '../src/private/provider-protocol.ts'] },
 });
-project.npmignore?.exclude('/handlers/', '/PLAN.md', '/docs/');
+project.npmignore?.exclude(
+  '/handlers/', '/PLAN.md', '/docs/', '/rosetta/',
+  // Local tool settings and CDK output (e.g. from e2e runs) must never ship.
+  'mise.toml', 'mise.local.toml', 'cdk.out', 'cdk.context.json',
+);
 project.npmignore?.include('/assets/');
 
 // Lint the public API against the CDK construct design rules.

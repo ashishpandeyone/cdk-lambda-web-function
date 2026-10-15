@@ -26,6 +26,11 @@ tsconfig.tsbuildinfo
 /handlers/
 /PLAN.md
 /docs/
+/rosetta/
+mise.toml
+mise.local.toml
+cdk.out
+cdk.context.json
 !/assets/
 /.gitattributes
 /.projenrc.ts
