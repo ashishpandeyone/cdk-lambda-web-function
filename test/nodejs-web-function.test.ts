@@ -63,10 +63,22 @@ test('bundles TypeScript to index.mjs and wires the entry point, runtime and sou
 
 test('the ESM bundle runs: AWS SDK and CommonJS dependencies load, stack traces map to the TypeScript source', async () => {
   const { outdir } = synth();
-  const res = await runBundle(bundleDir(outdir, 'index.mjs'), 'index.mjs', '--enable-source-maps');
+  const dir = bundleDir(outdir, 'index.mjs');
+  const res = await runBundle(dir, 'index.mjs', '--enable-source-maps');
 
   expect(res).toMatchObject({ ok: true, region: 'ap-south-1', sdk: 'function', commonJs: 'object' });
-  expect(res.stack).toContain('server.ts');
+  // Resolved next to the bundle, not to the build machine's absolute path.
+  expect(res.stack).toContain(path.join(dir, 'test/fixtures/nodejs/server.ts'));
+});
+
+test('source map paths are relative to the project root (no build-machine paths)', () => {
+  const { outdir } = synth();
+  const map = JSON.parse(fs.readFileSync(path.join(bundleDir(outdir, 'index.mjs'), 'index.mjs.map'), 'utf8'));
+
+  expect(map.sources).toContain('test/fixtures/nodejs/server.ts');
+  expect(map.sources.some((src: string) => src.startsWith('node_modules/@aws-sdk/client-sts/'))).toBe(true);
+  for (const src of map.sources) expect(src).not.toMatch(/^(\/|\.\.\/)/);
+  expect(JSON.stringify(map.sources)).not.toContain(os.homedir());
 });
 
 test('CommonJS output is index.js and runs', async () => {

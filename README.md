@@ -169,7 +169,7 @@ new NodejsWebFunction(this, 'Api', {
 ```
 
 - **Defaults:** `runtime` is `NODEJS_24_X`, and the esbuild target follows the runtime (`node24`). The project root is the directory of the nearest lock file above `entry` (override it with `depsLockFilePath` or `projectRoot`).
-- **It also sets what a `lambda.Code` can't:** the entry point that matches the bundle, and `NODE_OPTIONS=--enable-source-maps` when source maps are on, appended to any `NODE_OPTIONS` you set, so stack traces point at your `.ts` files.
+- **It also sets what a `lambda.Code` can't:** the entry point that matches the bundle, and `NODE_OPTIONS=--enable-source-maps` when source maps are on, appended to any `NODE_OPTIONS` you set, so stack traces point at your `.ts` files (e.g. `/var/task/src/server.ts:22:12`). Source map paths are relative to the project root, so no build-machine paths are deployed.
 - **ESM bundles include a `require` shim**, so CommonJS dependencies that load Node.js built-ins (Express, for example) work.
 - **The AWS SDK is bundled like any other dependency**, since the runtime has none. Only the clients you import are included.
 - **Bundling runs locally** when esbuild is installed in your project, and otherwise in Docker (an arm64 AWS SAM build image; set `forceDockerBundling` to always use Docker).

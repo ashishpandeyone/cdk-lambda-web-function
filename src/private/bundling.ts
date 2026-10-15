@@ -43,6 +43,25 @@ export interface BundleProps {
   readonly dockerImage: DockerImage;
 }
 
+/**
+ * Rewrites a source map's `sources` to be relative to the project root.
+ *
+ * esbuild writes them relative to the output directory, which CDK places outside the project, so
+ * they climb to the build machine's absolute paths (home directory, CI workspace) and end up in
+ * production stack traces. Relative to the project root, Node resolves them next to the bundle
+ * (e.g. `/var/task/src/server.ts`). Runs as `node -e SCRIPT <map file> <project root>`, locally
+ * and in Docker.
+ */
+export const SOURCE_MAP_REWRITE_SCRIPT = [
+  "const fs=require('fs'),path=require('path');",
+  'const [mapFile,root]=process.argv.slice(1);',
+  "const map=JSON.parse(fs.readFileSync(mapFile,'utf8'));",
+  'const out=path.dirname(mapFile);',
+  "map.sources=map.sources.map(s=>path.relative(root,path.resolve(out,map.sourceRoot||'',s)).split(path.sep).join('/'));",
+  'delete map.sourceRoot;',
+  'fs.writeFileSync(mapFile,JSON.stringify(map));',
+].join('');
+
 /** The file the bundle is written to, and the entry point the runtime must load. */
 export function outputFile(format: OutputFormat): string {
   return format === OutputFormat.ESM ? 'index.mjs' : 'index.js';
@@ -112,7 +131,10 @@ export function bundledCode(props: BundleProps): lambda.Code {
     bundling: {
       image: props.dockerImage,
       platform: 'linux/arm64',
-      command: ['bash', '-c', ['npx', '--yes', `esbuild@${DOCKER_ESBUILD_VERSION}`, ...dockerArgs].map(shellQuote).join(' ')],
+      command: ['bash', '-c', [
+        ['npx', '--yes', `esbuild@${DOCKER_ESBUILD_VERSION}`, ...dockerArgs].map(shellQuote).join(' '),
+        ...(props.esbuild.sourceMap ? [['node', '-e', SOURCE_MAP_REWRITE_SCRIPT, `/asset-output/${file}.map`, '/asset-input'].map(shellQuote).join(' ')] : []),
+      ].join(' && ')],
       environment: { npm_config_cache: '/tmp/.npm', npm_config_update_notifier: 'false', ...props.environment },
       local: props.forceDockerBundling ? undefined : {
         tryBundle(outputDir: string): boolean {
@@ -125,6 +147,10 @@ export function bundledCode(props: BundleProps): lambda.Code {
           });
           if (result.status !== 0) {
             throw new Error(`esbuild failed for ${props.entry} (exit ${result.status ?? result.signal})`);
+          }
+          if (props.esbuild.sourceMap) {
+            const rewrite = spawnSync(process.execPath, ['-e', SOURCE_MAP_REWRITE_SCRIPT, path.join(outputDir, `${file}.map`), props.projectRoot], { stdio: 'inherit' });
+            if (rewrite.status !== 0) throw new Error(`rewriting the source map for ${props.entry} failed`);
           }
           return true;
         },
