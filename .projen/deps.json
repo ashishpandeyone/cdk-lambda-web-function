@@ -138,6 +138,11 @@
       "type": "build"
     },
     {
+      "name": "supports-color",
+      "version": "^7",
+      "type": "build"
+    },
+    {
       "name": "ts-jest",
       "type": "build"
     },

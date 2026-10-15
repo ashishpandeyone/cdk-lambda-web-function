@@ -506,6 +506,7 @@
             "jsii-rosetta",
             "jsii",
             "projen",
+            "supports-color",
             "ts-jest",
             "ts-node",
             "tsx",
