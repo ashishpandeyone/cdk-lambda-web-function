@@ -222,7 +222,7 @@ new WebFunction(this, 'Api', {
 - One endpoint per function; no traffic splitting between revisions.
 - Not yet supported: importing existing functions, VPC access (network connectors), resource-policy permissions, KMS encryption, metrics helpers, tracing, and a CloudFront origin.
 - `cdk deploy --hotswap` and `cdk watch` don't support Web Functions.
-- Quotas per account and region: 50 revisions and 10 endpoints per function, 200 Arm vCPUs, 10,000 requests per second.
+- Quotas: 10 endpoints and about 50 revisions per function (Lambda cleans up older revisions automatically), and 10,000 requests per second per endpoint. Per account and region: 100,000 requests per second and 2,000 Arm64 vCPUs (each execution environment uses 2). The account quotas are adjustable, and new accounts start lower. See [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
 - The stack's custom resource provider Lambda keeps its own log group after the stack is deleted, as with other CDK custom resources.
 
 ## Development
