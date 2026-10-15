@@ -19,9 +19,14 @@ function synth(props: Partial<NodejsWebFunctionProps> = {}) {
   return { stack, fn, template: Template.fromStack(stack), outdir: assembly.directory };
 }
 
-/** The bundled asset directory (the one containing index.mjs / index.js). */
+/**
+ * The bundled asset directory (the one containing index.mjs / index.js). The custom resource
+ * provider's asset also has an index.js, next to its __entrypoint__.js; which one sorts first
+ * depends on the asset hashes.
+ */
 function bundleDir(outdir: string, file: string): string {
-  const dir = fs.readdirSync(outdir).map((d) => path.join(outdir, d)).find((d) => fs.existsSync(path.join(d, file)));
+  const dir = fs.readdirSync(outdir).map((d) => path.join(outdir, d))
+    .find((d) => fs.existsSync(path.join(d, file)) && !fs.existsSync(path.join(d, '__entrypoint__.js')));
   if (!dir) throw new Error(`no asset with ${file} in ${outdir}`);
   return dir;
 }
@@ -31,10 +36,13 @@ async function runBundle(dir: string, file: string, nodeOptions?: string): Promi
   const port = 39000 + Math.floor(Math.random() * 1000);
   const child = spawn(process.execPath, [path.join(dir, file)], {
     env: { ...process.env, AWS_LAMBDA_HTTP_ENDPOINT: `127.0.0.1:${port}`, AWS_REGION: 'ap-south-1', NODE_OPTIONS: nodeOptions ?? '' },
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
   });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => (stderr += chunk));
   try {
     for (let i = 0; i < 50; i++) {
+      if (child.exitCode !== null) throw new Error(`bundle exited (${child.exitCode}) before listening\n${stderr}`);
       try {
         return await (await fetch(`http://127.0.0.1:${port}/`)).json();
       } catch {
