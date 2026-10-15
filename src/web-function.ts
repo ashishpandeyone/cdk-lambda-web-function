@@ -11,22 +11,9 @@ import { WebFunctionEndpoint, type WebFunctionEndpointOptions } from './web-func
 import { WebFunctionGrants } from './web-function-grants';
 
 /**
- * Properties for a `WebFunction`.
+ * Options shared by `WebFunction` and `NodejsWebFunction`: everything except how the code is supplied.
  */
-export interface WebFunctionProps {
-  /**
-   * The Node.js runtime, e.g. `lambda.Runtime.NODEJS_24_X`.
-   */
-  readonly runtime: lambda.Runtime;
-
-  /**
-   * The code: a zip in S3 (`Code.fromAsset`, `Code.fromBucket`, `Code.fromCustomCommand`, `Code.fromDockerBuild`).
-   * Inline code and container images aren't supported.
-   *
-   * The code is copied into the stack's code bucket, which Lambda Web Functions can read.
-   */
-  readonly code: lambda.Code;
-
+export interface WebFunctionOptions {
   /**
    * How callers of the endpoint are authenticated.
    */
@@ -38,13 +25,6 @@ export interface WebFunctionProps {
    * @default - a HOME_REGION endpoint
    */
   readonly endpoint?: WebFunctionEndpointOptions;
-
-  /**
-   * The file that starts your server, relative to the root of the code.
-   *
-   * @default 'index.js'
-   */
-  readonly entrypoint?: string;
 
   /**
    * The function's name. Renaming a function replaces it, and its endpoint gets a new URL.
@@ -120,6 +100,32 @@ export interface WebFunctionProps {
    * @default lambda.SystemLogLevel.INFO
    */
   readonly systemLogLevelV2?: lambda.SystemLogLevel;
+}
+
+/**
+ * Properties for a `WebFunction`.
+ */
+export interface WebFunctionProps extends WebFunctionOptions {
+  /**
+   * The Node.js runtime, e.g. `lambda.Runtime.NODEJS_24_X`.
+   */
+  readonly runtime: lambda.Runtime;
+
+  /**
+   * The code: a zip in S3 (`Code.fromAsset`, `Code.fromBucket`, `Code.fromCustomCommand`, `Code.fromDockerBuild`).
+   * Inline code and container images aren't supported.
+   *
+   * The code is copied into the stack's code bucket, which Lambda Web Functions can read.
+   */
+  readonly code: lambda.Code;
+
+  /**
+   * The file that starts your server, relative to the root of the code.
+   *
+   * @default 'index.js'
+   */
+  readonly entrypoint?: string;
+
 }
 
 /**

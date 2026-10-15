@@ -151,6 +151,30 @@ table.grantReadWriteData(api);           // the default role trusts lambda.amazo
 - Environment variable names starting with `AWS_` are reserved.
 - **Renaming the function replaces it and changes its URL.** A generated name depends on the construct path, so moving the construct renames it too.
 
+### Bundling TypeScript with `NodejsWebFunction`
+
+`NodejsWebFunction` is a `WebFunction` that bundles your server from a TypeScript or JavaScript entry file with esbuild, like `NodejsFunction` does for Lambda functions:
+
+```ts
+new NodejsWebFunction(this, 'Api', {
+  entry: 'src/server.ts',
+  authType: WebFunctionAuthType.AWS_IAM,
+  bundling: {
+    minify: true,                                       // default true
+    sourceMap: true,                                    // default true
+    format: lambdaNodejs.OutputFormat.ESM,              // default ESM (index.mjs); CJS gives index.js
+    externalModules: [],                                // default: bundle everything you import
+  },
+});
+```
+
+- **Defaults:** `runtime` is `NODEJS_24_X`, and the esbuild target follows the runtime (`node24`). The project root is the directory of the nearest lock file above `entry` (override it with `depsLockFilePath` or `projectRoot`).
+- **It also sets what a `lambda.Code` can't:** the entry point that matches the bundle, and `NODE_OPTIONS=--enable-source-maps` when source maps are on, appended to any `NODE_OPTIONS` you set, so stack traces point at your `.ts` files (e.g. `/var/task/src/server.ts:22:12`). Source map paths are relative to the project root, so no build-machine paths are deployed.
+- **ESM bundles include a `require` shim**, so CommonJS dependencies that load Node.js built-ins (Express, for example) work.
+- **The AWS SDK is bundled like any other dependency**, since the runtime has none. Only the clients you import are included.
+- **Bundling runs locally** when esbuild is installed in your project, and otherwise in Docker (an arm64 AWS SAM build image; set `forceDockerBundling` to always use Docker).
+- **Not yet supported:** installing native modules next to the bundle (`nodeModules`) and command hooks. For native dependencies, use `WebFunction` with `Code.fromAsset(..., { bundling: { image, command } })`.
+
 ### Code
 
 `code` takes any `lambda.Code` that produces a zip in S3: `fromAsset`, `fromBucket`/`fromBucketV2`, `fromCustomCommand`, `fromDockerBuild`. Inline code and container images fail at synth time.

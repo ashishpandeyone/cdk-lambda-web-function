@@ -1,9 +1,11 @@
 import * as path from 'node:path';
-import { App, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { App, DockerImage, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import { dockerCommand, type BundleProps } from '../src/private/bundling';
 import { WebFunctionCode } from '../src/private/code';
 import { EndpointLookup } from '../src/private/endpoint-lookup';
 import { WebFunctionLogGroup } from '../src/private/log-group';
@@ -111,5 +113,41 @@ describe('endpoint lookup', () => {
       Action: 'lambda:GetWebFunctionEndpoint',
       Resource: { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':lambda:ap-south-1:111111111111:web-function/api/endpoint/*']] },
     });
+  });
+});
+
+describe('docker bundling', () => {
+  const root = path.join(__dirname, '..');
+  const props = (esbuild: Partial<BundleProps['esbuild']> = {}): BundleProps => ({
+    entry: path.join(root, 'src', 'server.ts'),
+    projectRoot: root,
+    forceDockerBundling: true,
+    dockerImage: DockerImage.fromRegistry('public.ecr.aws/sam/build-nodejs24.x:latest-arm64'),
+    esbuild: {
+      minify: true,
+      sourceMap: true,
+      format: OutputFormat.ESM,
+      target: 'node24',
+      externalModules: [],
+      define: {},
+      loader: {},
+      keepNames: false,
+      esbuildArgs: {},
+      ...esbuild,
+    },
+  });
+
+  test('runs esbuild installed outside the mounted project, never the project\'s own (host-platform) binary', () => {
+    const command = dockerCommand(props());
+    expect(command).not.toMatch(/npx/);
+    expect(command).toMatch(/^npm install --prefix \/tmp\/esbuild .* esbuild@0\.28 && \/tmp\/esbuild\/node_modules\/\.bin\/esbuild \/asset-input\/src\/server\.ts /);
+    expect(command).toMatch(/--outfile=\/asset-output\/index\.mjs/);
+    expect(command).toMatch(/&& node -e .* \/asset-output\/index\.mjs\.map \/asset-input$/);
+  });
+
+  test('maps paths into the container', () => {
+    expect(dockerCommand(props({ tsconfig: 'tsconfig.dev.json' }))).toMatch(/--tsconfig=\/asset-input\/tsconfig\.dev\.json /);
+    expect(dockerCommand(props({ tsconfig: path.join(root, 'tsconfig.dev.json') }))).toMatch(/--tsconfig=\/asset-input\/tsconfig\.dev\.json /);
+    expect(dockerCommand(props({ sourceMap: false, format: OutputFormat.CJS }))).toMatch(/--outfile=\/asset-output\/index\.js --minify$/);
   });
 });
