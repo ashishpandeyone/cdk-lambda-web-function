@@ -56,7 +56,7 @@ const project = new awscdk.AwsCdkConstructLibrary({
   eslintOptions: { dirs: ['src'], devdirs: ['test', 'handlers'] },
 
   gitignore: [
-    'cdk.out', 'cdk.context.json', '.env', '.DS_Store', '/assets/',
+    'cdk.out', 'cdk.context.json', '.env', '.DS_Store', '/assets/', '.jsii.tabl.json',
     // Local planning notes and drafts (design history, research, future scope): never committed or published.
     '/PLAN.md', '/docs/',
     // Personal tool settings (AWS profile/region); mise.toml only pins tool versions.

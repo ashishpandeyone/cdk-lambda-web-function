@@ -35,6 +35,7 @@ cdk.context.json
 .env
 .DS_Store
 /assets/
+.jsii.tabl.json
 /PLAN.md
 /docs/
 mise.local.toml
