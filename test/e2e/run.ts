@@ -32,11 +32,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Credentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
 type Outputs = Record<string, string>;
-interface Context { endpointType: string; regions: string[]; auth?: string; version?: string; kind?: string }
+interface Context { endpointType: string; regions: string[]; auth?: string; version?: string; kind?: string; bundling?: string }
 
 class Scenario {
   public readonly results: { name: string; ok: boolean; detail: string }[] = [];
   private readonly started = Date.now();
+
+  // A fresh directory per run: on some Docker hosts (OrbStack), a bind mount of a path that was renamed and recreated still
+  // points at the old directory, and CDK recreates the same bundling-temp path whenever it synthesizes into the same cdk.out.
+  private readonly outdir = path.join(mkdtempSync(path.join(tmpdir(), 'webfn-e2e-')), 'cdk.out');
 
   constructor(public readonly id: string, private readonly description: string) {}
 
@@ -68,9 +72,9 @@ class Scenario {
 
   private contextArgs(ctx: Context): string[] {
     // Scenarios run in parallel, so each synthesizes into its own directory.
-    return ['--app', 'npx tsx test/e2e/app.ts', '--output', path.join(tmpdir(), `webfn-e2e-cdk.out-${this.id}`), '-c', `scenario=${this.id}`, '-c', `endpointType=${ctx.endpointType}`,
+    return ['--app', 'npx tsx test/e2e/app.ts', '--output', this.outdir, '-c', `scenario=${this.id}`, '-c', `endpointType=${ctx.endpointType}`,
       '-c', `regions=${JSON.stringify(ctx.regions)}`, '-c', `auth=${ctx.auth ?? 'AWS_IAM'}`, '-c', `version=${ctx.version ?? 'v1'}`,
-      '-c', `kind=${ctx.kind ?? 'web'}`];
+      '-c', `kind=${ctx.kind ?? 'web'}`, '-c', `bundling=${ctx.bundling ?? 'local'}`];
   }
 }
 
@@ -277,8 +281,15 @@ async function scenarioPublicHome(): Promise<Scenario> {
 }
 
 async function scenarioNodejs(): Promise<Scenario> {
-  const s = new Scenario('D', 'NodejsWebFunction: TypeScript bundled with esbuild, source maps in Lambda');
-  const ctx: Context = { endpointType: 'HOME_REGION', regions: [], auth: 'NONE', kind: 'nodejs' };
+  return nodejsScenario(new Scenario('D', 'NodejsWebFunction: TypeScript bundled with esbuild, source maps in Lambda'), 'local');
+}
+
+async function scenarioNodejsDocker(): Promise<Scenario> {
+  return nodejsScenario(new Scenario('E', 'NodejsWebFunction bundled in Docker (forceDockerBundling)'), 'docker');
+}
+
+async function nodejsScenario(s: Scenario, bundling: 'local' | 'docker'): Promise<Scenario> {
+  const ctx: Context = { endpointType: 'HOME_REGION', regions: [], auth: 'NONE', kind: 'nodejs', bundling };
   let out: Outputs | undefined;
   try {
     out = await s.deploy(ctx);
@@ -287,6 +298,8 @@ async function scenarioNodejs(): Promise<Scenario> {
     s.check('bundled AWS SDK client loads (the runtime has none)', res.body?.sdk === 'function', `sdk=${res.body?.sdk}`);
     s.check('CommonJS dependency loads in the ESM bundle (require shim)', res.body?.commonJs === 'object', `commonJs=${res.body?.commonJs}`);
     s.check('stack traces map to the TypeScript source (NODE_OPTIONS=--enable-source-maps)', /server\.ts/.test(res.body?.stack ?? ''),
+      String(res.body?.stack ?? '').split('\n')[1]?.trim());
+    s.check('stack traces show the source next to the bundle, not a build-machine path', /\/var\/task\/test\/fixtures\/nodejs\/server\.ts/.test(res.body?.stack ?? ''),
       String(res.body?.stack ?? '').split('\n')[1]?.trim());
     await checkLogs(s, out, [HOME]);
   } catch (e) {
@@ -299,7 +312,9 @@ async function scenarioNodejs(): Promise<Scenario> {
 }
 
 async function main() {
-  const all: Record<string, () => Promise<Scenario>> = { A: scenarioPerRegion, B: scenarioMultiRegion, C: scenarioPublicHome, D: scenarioNodejs };
+  const all: Record<string, () => Promise<Scenario>> = {
+    A: scenarioPerRegion, B: scenarioMultiRegion, C: scenarioPublicHome, D: scenarioNodejs, E: scenarioNodejsDocker,
+  };
   const selected = process.argv.slice(2).filter((a) => all[a]);
   const run = selected.length > 0 ? selected : Object.keys(all);
   const scenarios = await Promise.all(run.map((id) => all[id]()));

@@ -1,7 +1,7 @@
 /**
  * CDK app for the live end-to-end tests (see run.ts). Built from the library source.
  * Context: scenario, endpointType (HOME_REGION | MULTI_REGION | PER_REGION), regions (JSON), auth (AWS_IAM | NONE), version (v1 | v2),
- * kind (web | nodejs: NodejsWebFunction bundling test/fixtures/nodejs/server.ts).
+ * kind (web | nodejs: NodejsWebFunction bundling test/fixtures/nodejs/server.ts), bundling (local | docker: forceDockerBundling).
  */
 import * as path from 'node:path';
 import { App, CfnOutput, RemovalPolicy, Stack } from 'aws-cdk-lib';
@@ -29,7 +29,11 @@ const options: WebFunctionOptions = {
   logRemovalPolicy: RemovalPolicy.DESTROY,
 };
 const fn = ctx('kind', 'web') === 'nodejs'
-  ? new NodejsWebFunction(stack, 'Api', { ...options, entry: path.join(__dirname, '..', 'fixtures', 'nodejs', 'server.ts') })
+  ? new NodejsWebFunction(stack, 'Api', {
+    ...options,
+    entry: path.join(__dirname, '..', 'fixtures', 'nodejs', 'server.ts'),
+    bundling: { forceDockerBundling: ctx('bundling', 'local') === 'docker' },
+  })
   : new WebFunction(stack, 'Api', {
     ...options,
     runtime: lambda.Runtime.NODEJS_24_X,
