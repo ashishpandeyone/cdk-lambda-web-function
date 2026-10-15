@@ -416,15 +416,17 @@ async function endpointWeights(functionName: string, endpointName: string) {
   const key = (ws?: { revisionId?: string; weight?: number }[]) => (ws ?? []).map((w) => `${w.revisionId}:${w.weight}`).sort().join(',');
   const weights = key(e.revisionWeights);
   const regions = Object.values(e.regionalEndpoints ?? {});
-  // A region lists its weights once the endpoint has been updated (not right after it was created).
-  const settled = e.updateStatus === 'Successful'
-    && regions.every((r) => r.updateStatus === 'Successful' && (!r.revisionWeights?.length || key(r.revisionWeights) === weights));
-  return { weights, settled, regions: regions.length };
+  // An endpoint that was never updated may report no update status, and its regions no weights.
+  const done = (status?: string) => status === undefined || status === 'Successful';
+  const settled = done(e.updateStatus)
+    && regions.every((r) => done(r.updateStatus) && (!r.revisionWeights?.length || key(r.revisionWeights) === weights));
+  return { weights, settled, status: e.updateStatus, regions: regions.length };
 }
 
-/** Records every distinct (settled) weight state of the endpoints while `during` runs. */
-async function watchWeights(functionName: string, endpointNames: string[], during: Promise<unknown>) {
-  const seen = new Map<string, string[]>(endpointNames.map((n) => [n, []]));
+/** Records every distinct (settled) weight state of the endpoints while `during` runs, starting with `initial`. */
+async function watchWeights(functionName: string, initial: Map<string, string>, during: Promise<unknown>) {
+  const endpointNames = [...initial.keys()];
+  const seen = new Map<string, string[]>(endpointNames.map((n) => [n, [initial.get(n)!]]));
   let done = false;
   const finished = during.finally(() => { done = true; });
   while (!done) {
@@ -460,6 +462,12 @@ async function scenarioProgressive(): Promise<Scenario> {
 
     // 2. A new revision: the default endpoint runs a 20% canary for 2 minutes, Public moves 50% a minute.
     ctx = { ...base, appVersion: 'g2' };
+    const initial = new Map<string, string>();
+    for (const name of [out.EndpointName, out.PublicEndpointName]) {
+      const w = await endpointWeights(out.FunctionName, name);
+      s.log(`${name} before the deployment: ${w.weights} (status ${w.status ?? 'none'})`);
+      initial.set(name, w.weights);
+    }
     started = Date.now();
     const deploying = s.deploy(ctx);
     const sampled = (async () => {
@@ -471,7 +479,7 @@ async function scenarioProgressive(): Promise<Scenario> {
       }
       return [];
     })();
-    const seen = await watchWeights(out.FunctionName, [out.EndpointName, out.PublicEndpointName], deploying);
+    const seen = await watchWeights(out.FunctionName, initial, deploying);
     out = await deploying;
     const r2 = out.RevisionId;
     const elapsed = Math.round((Date.now() - started) / 1000);
