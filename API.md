@@ -1094,7 +1094,7 @@ const nodejsWebFunctionBundlingOptions: NodejsWebFunctionBundlingOptions = { ...
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionBundlingOptions.property.minify">minify</a></code> | <code>boolean</code> | Minify the bundle. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionBundlingOptions.property.sourceMap">sourceMap</a></code> | <code>boolean</code> | Generate a source map, and set `NODE_OPTIONS=--enable-source-maps` so stack traces point at your sources. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionBundlingOptions.property.target">target</a></code> | <code>string</code> | esbuild target. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionBundlingOptions.property.tsconfig">tsconfig</a></code> | <code>string</code> | Path of the tsconfig.json to use. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionBundlingOptions.property.tsconfig">tsconfig</a></code> | <code>string</code> | Path of the tsconfig.json to use, relative to the project root or absolute (inside the project root). |
 
 ---
 
@@ -1295,7 +1295,7 @@ public readonly tsconfig: string;
 - *Type:* string
 - *Default:* esbuild's lookup from the entry file
 
-Path of the tsconfig.json to use.
+Path of the tsconfig.json to use, relative to the project root or absolute (inside the project root).
 
 ---
 

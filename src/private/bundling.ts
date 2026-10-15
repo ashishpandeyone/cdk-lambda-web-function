@@ -7,6 +7,7 @@ import { OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 
 /** esbuild version used inside the Docker fallback. */
 export const DOCKER_ESBUILD_VERSION = '0.28';
+const DOCKER_ESBUILD_PREFIX = '/tmp/esbuild';
 
 const LOCK_FILES = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'bun.lock'];
 const ENTRY_EXTENSIONS = ['.ts', '.mts', '.cts', '.tsx', '.js', '.mjs', '.cjs', '.jsx'];
@@ -123,23 +124,19 @@ export function esbuildArgs(entry: string, outfile: string, o: EsbuildOptions): 
  */
 export function bundledCode(props: BundleProps): lambda.Code {
   const file = outputFile(props.esbuild.format);
-  const relativeEntry = path.relative(props.projectRoot, props.entry).split(path.sep).join('/');
-  const dockerArgs = esbuildArgs(`/asset-input/${relativeEntry}`, `/asset-output/${file}`, props.esbuild);
+  const tsconfig = tsconfigPath(props);
 
   return lambda.Code.fromAsset(props.projectRoot, {
     assetHashType: AssetHashType.OUTPUT,
     bundling: {
       image: props.dockerImage,
       platform: 'linux/arm64',
-      command: ['bash', '-c', [
-        ['npx', '--yes', `esbuild@${DOCKER_ESBUILD_VERSION}`, ...dockerArgs].map(shellQuote).join(' '),
-        ...(props.esbuild.sourceMap ? [['node', '-e', SOURCE_MAP_REWRITE_SCRIPT, `/asset-output/${file}.map`, '/asset-input'].map(shellQuote).join(' ')] : []),
-      ].join(' && ')],
+      command: ['bash', '-c', dockerCommand(props)],
       environment: { npm_config_cache: '/tmp/.npm', npm_config_update_notifier: 'false', ...props.environment },
       local: props.forceDockerBundling ? undefined : {
         tryBundle(outputDir: string): boolean {
           if (!hasLocalEsbuild(props.projectRoot)) return false;
-          const args = esbuildArgs(props.entry, path.join(outputDir, file), props.esbuild);
+          const args = esbuildArgs(props.entry, path.join(outputDir, file), { ...props.esbuild, tsconfig });
           const result = spawnSync('npx', ['--no-install', 'esbuild', ...args], {
             cwd: props.projectRoot,
             env: { ...process.env, ...props.environment },
@@ -157,6 +154,25 @@ export function bundledCode(props: BundleProps): lambda.Code {
       },
     },
   });
+}
+
+/** The shell command that bundles inside the container (project at /asset-input, output to /asset-output). */
+export function dockerCommand(props: BundleProps): string {
+  const file = outputFile(props.esbuild.format);
+  const inDocker = (p: string) => `/asset-input/${path.relative(props.projectRoot, p).split(path.sep).join('/')}`;
+  const tsconfig = tsconfigPath(props);
+  const args = esbuildArgs(inDocker(props.entry), `/asset-output/${file}`, { ...props.esbuild, tsconfig: tsconfig && inDocker(tsconfig) });
+  return [
+    // Installed outside the mounted project: npx would pick up the project's own esbuild, a binary for the host's platform.
+    ['npm', 'install', '--prefix', DOCKER_ESBUILD_PREFIX, '--no-save', '--no-audit', '--no-fund', '--loglevel=error', `esbuild@${DOCKER_ESBUILD_VERSION}`].join(' '),
+    [`${DOCKER_ESBUILD_PREFIX}/node_modules/.bin/esbuild`, ...args].map(shellQuote).join(' '),
+    ...(props.esbuild.sourceMap ? [['node', '-e', SOURCE_MAP_REWRITE_SCRIPT, `/asset-output/${file}.map`, '/asset-input'].map(shellQuote).join(' ')] : []),
+  ].join(' && ');
+}
+
+/** The tsconfig as an absolute path. A relative one is relative to the project root, esbuild's working directory. */
+function tsconfigPath(props: BundleProps): string | undefined {
+  return props.esbuild.tsconfig ? path.resolve(props.projectRoot, props.esbuild.tsconfig) : undefined;
 }
 
 function hasLocalEsbuild(projectRoot: string): boolean {

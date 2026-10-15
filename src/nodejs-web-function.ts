@@ -76,7 +76,7 @@ export interface NodejsWebFunctionBundlingOptions {
   readonly footer?: string;
 
   /**
-   * Path of the tsconfig.json to use.
+   * Path of the tsconfig.json to use, relative to the project root or absolute (inside the project root).
    *
    * @default - esbuild's lookup from the entry file
    */
