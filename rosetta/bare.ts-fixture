@@ -1,0 +1,11 @@
+// Fixture for examples that show their own imports.
+import { Construct } from 'constructs';
+import { CfnOutput, Stack } from 'aws-cdk-lib';
+
+class Fixture extends Stack {
+  constructor(scope: Construct, id: string) {
+    super(scope, id);
+
+    /// here
+  }
+}
