@@ -32,7 +32,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Credentials = { accessKeyId: string; secretAccessKey: string; sessionToken?: string };
 type Outputs = Record<string, string>;
-interface Context { endpointType: string; regions: string[]; auth?: string; version?: string }
+interface Context { endpointType: string; regions: string[]; auth?: string; version?: string; kind?: string }
 
 class Scenario {
   public readonly results: { name: string; ok: boolean; detail: string }[] = [];
@@ -69,7 +69,8 @@ class Scenario {
   private contextArgs(ctx: Context): string[] {
     // Scenarios run in parallel, so each synthesizes into its own directory.
     return ['--app', 'npx tsx test/e2e/app.ts', '--output', path.join(tmpdir(), `webfn-e2e-cdk.out-${this.id}`), '-c', `scenario=${this.id}`, '-c', `endpointType=${ctx.endpointType}`,
-      '-c', `regions=${JSON.stringify(ctx.regions)}`, '-c', `auth=${ctx.auth ?? 'AWS_IAM'}`, '-c', `version=${ctx.version ?? 'v1'}`];
+      '-c', `regions=${JSON.stringify(ctx.regions)}`, '-c', `auth=${ctx.auth ?? 'AWS_IAM'}`, '-c', `version=${ctx.version ?? 'v1'}`,
+      '-c', `kind=${ctx.kind ?? 'web'}`];
   }
 }
 
@@ -275,8 +276,30 @@ async function scenarioPublicHome(): Promise<Scenario> {
   return s;
 }
 
+async function scenarioNodejs(): Promise<Scenario> {
+  const s = new Scenario('D', 'NodejsWebFunction: TypeScript bundled with esbuild, source maps in Lambda');
+  const ctx: Context = { endpointType: 'HOME_REGION', regions: [], auth: 'NONE', kind: 'nodejs' };
+  let out: Outputs | undefined;
+  try {
+    out = await s.deploy(ctx);
+    const res = await callUntil(out.Url, undefined, 200, 60_000);
+    s.check('bundled TypeScript server is served', res.status === 200 && res.body?.ok === true, `status=${res.status}`);
+    s.check('bundled AWS SDK client loads (the runtime has none)', res.body?.sdk === 'function', `sdk=${res.body?.sdk}`);
+    s.check('CommonJS dependency loads in the ESM bundle (require shim)', res.body?.commonJs === 'object', `commonJs=${res.body?.commonJs}`);
+    s.check('stack traces map to the TypeScript source (NODE_OPTIONS=--enable-source-maps)', /server\.ts/.test(res.body?.stack ?? ''),
+      String(res.body?.stack ?? '').split('\n')[1]?.trim());
+    await checkLogs(s, out, [HOME]);
+  } catch (e) {
+    s.check('scenario ran to completion', false, (e as Error).message);
+  } finally {
+    await s.destroy(ctx).catch((e) => s.check('destroy', false, (e as Error).message));
+    if (out) await checkNothingLeft(s, out);
+  }
+  return s;
+}
+
 async function main() {
-  const all: Record<string, () => Promise<Scenario>> = { A: scenarioPerRegion, B: scenarioMultiRegion, C: scenarioPublicHome };
+  const all: Record<string, () => Promise<Scenario>> = { A: scenarioPerRegion, B: scenarioMultiRegion, C: scenarioPublicHome, D: scenarioNodejs };
   const selected = process.argv.slice(2).filter((a) => all[a]);
   const run = selected.length > 0 ? selected : Object.keys(all);
   const scenarios = await Promise.all(run.map((id) => all[id]()));
