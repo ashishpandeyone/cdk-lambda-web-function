@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { App, Stack } from 'aws-cdk-lib';
+import { App, CfnResource, Stack } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -136,6 +136,72 @@ describe('resource policy', () => {
     Annotations.fromStack(Stack.of(fn)).hasNoWarning('/Stack/Api', Match.stringLikeRegexp('from any account'));
   });
 
+  // The principal kinds CDK's lambda.Function grantInvoke tests cover.
+  test('grantInvoke: an ARN principal in another account', () => {
+    const { fn, template } = make();
+    fn.grantInvoke(new iam.ArnPrincipal('arn:aws:iam::222222222222:role/caller'));
+    expect(statements(template())).toEqual([expect.objectContaining({ Principal: { AWS: 'arn:aws:iam::222222222222:role/caller' }, Action: INVOKE })]);
+  });
+
+  test('grantInvoke: an organization (a * principal pinned by aws:PrincipalOrgID)', () => {
+    const { fn, template } = make();
+    fn.grantInvoke(new iam.OrganizationPrincipal('o-12345abcde'));
+    expect(statements(template())).toEqual([expect.objectContaining({
+      Principal: { AWS: '*' }, Condition: { StringEquals: { 'aws:PrincipalOrgID': 'o-12345abcde' } },
+    })]);
+  });
+
+  test('grantInvoke: a composite principal of two accounts', () => {
+    const { fn, template } = make();
+    fn.grantInvoke(new iam.CompositePrincipal(new iam.AccountPrincipal('222222222222'), new iam.AccountPrincipal('333333333333')));
+    const principals = statements(template()).flatMap((st: any) => [st.Principal.AWS].flat());
+    expect(principals).toEqual([
+      { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':iam::222222222222:root']] },
+      { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':iam::333333333333:root']] },
+    ]);
+  });
+
+  test('grantInvoke: an imported role in this account stays identity-only', () => {
+    const { fn, stack, template } = make();
+    fn.grantInvoke(iam.Role.fromRoleArn(stack, 'Local', 'arn:aws:iam::111111111111:role/caller'));
+    const t = template();
+    t.resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+    t.hasResourceProperties('AWS::IAM::Policy', { Roles: ['caller'], PolicyDocument: { Statement: [Match.objectLike({ Action: INVOKE })] } });
+  });
+
+  test('grantInvoke twice for the same service principal: one statement', () => {
+    const { fn, template } = make();
+    const cdn = new iam.ServicePrincipal('cloudfront.amazonaws.com').withConditions({ StringEquals: { 'aws:SourceAccount': '111111111111' } });
+    fn.grantInvoke(cdn);
+    fn.grantInvoke(cdn);
+    expect(statements(template())).toHaveLength(1);
+  });
+
+  test('grantInvoke for the same service principal with different conditions: one statement each', () => {
+    const { fn, template } = make();
+    const from = (id: string) => new iam.ServicePrincipal('cloudfront.amazonaws.com')
+      .withConditions({ StringEquals: { 'aws:SourceArn': `arn:aws:cloudfront::111111111111:distribution/${id}` } });
+    fn.grantInvoke(from('A'));
+    fn.grantInvoke(from('B'));
+    expect(statements(template()).map((st: any) => st.Condition.StringEquals['aws:SourceArn'])).toEqual([
+      'arn:aws:cloudfront::111111111111:distribution/A', 'arn:aws:cloudfront::111111111111:distribution/B',
+    ]);
+  });
+
+  test('in an environment-agnostic stack, a role of the stack stays identity-only', () => {
+    const stack = new Stack(new App(), 'Stack');
+    const fn = new WebFunction(stack, 'Api', { runtime: lambda.Runtime.NODEJS_24_X, code: code(), authType: WebFunctionAuthType.AWS_IAM });
+    fn.grantInvoke(new iam.Role(stack, 'Caller', { assumedBy: new iam.AccountRootPrincipal() }));
+    Template.fromStack(stack).resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+  });
+
+  test('a grant on the resource policy can be depended on', () => {
+    const { fn, stack, template } = make();
+    const consumer = new CfnResource(stack, 'Consumer', { type: 'Test::Consumer' });
+    fn.grantInvoke(new iam.AccountPrincipal('222222222222')).applyBefore(consumer);
+    expect(template().toJSON().Resources.Consumer.DependsOn).toEqual([expect.stringMatching(/^ApiResourcePolicy/)]);
+  });
+
   test('warns when a service principal has no source condition', () => {
     const { fn } = make();
     fn.addPermission('Cdn', { principal: new iam.ServicePrincipal('cloudfront.amazonaws.com') });
@@ -155,10 +221,14 @@ describe('resource policy', () => {
     })]);
   });
 
-  test('a statement without a principal fails synthesis', () => {
+  test.each([
+    ['no principal', { actions: [INVOKE], resources: ['*'] }, /must specify at least one IAM principal/],
+    ['no action', { principals: [new iam.AccountPrincipal('222222222222')], resources: ['*'] }, /must specify at least one 'action' or 'notAction'/],
+    ['no resource', { principals: [new iam.AccountPrincipal('222222222222')], actions: [INVOKE] }, /must specify at least one resource/],
+  ])('a statement with %s fails synthesis', (_, props, error) => {
     const { fn, template } = make();
-    fn.addToResourcePolicy(new iam.PolicyStatement({ actions: [INVOKE], resources: ['*'] }));
-    expect(() => template()).toThrow(/A PolicyStatement used in a resource-based policy must specify at least one IAM principal/);
+    fn.addToResourcePolicy(new iam.PolicyStatement(props));
+    expect(() => template()).toThrow(error);
   });
 
   test('imported functions: nothing is added, with a warning; grants stay identity-only', () => {
