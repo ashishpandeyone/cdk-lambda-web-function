@@ -128,4 +128,8 @@ project.package.addField('awslint', {
   ],
 });
 
+// main requires signed commits (ruleset protect-main). Commit the dependency upgrade through the GitHub API, which signs it,
+// instead of with git in the runner. projen has no option for create-pull-request's sign-commits; step 4 is "Create Pull Request".
+project.github?.tryFindWorkflow('upgrade-main')?.file?.addOverride('jobs.pr.steps.4.with.sign-commits', true);
+
 project.synth();
