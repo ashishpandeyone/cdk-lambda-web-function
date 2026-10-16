@@ -54,7 +54,9 @@ export interface WebFunctionOriginProps extends cloudfront.OriginProps {
 export interface WebFunctionOriginWithOacProps extends WebFunctionOriginProps {
   /**
    * The origin access control. It must have origin type `lambda`, signing behavior `always-amz-auth`, and signing
-   * protocol `sigv4` (a regional endpoint) or `sigv4a` (a `MULTI_REGION` endpoint's global domain).
+   * protocol `sigv4` (a regional endpoint) or `sigv4a` (a `MULTI_REGION` endpoint's global domain). Checked at
+   * synthesis when it's defined in this app (CDK's `FunctionUrlOriginAccessControl` signs with `always`, which
+   * CloudFront rejects for Web Function origins).
    *
    * @default - one is created per stack and signing protocol
    */
@@ -96,6 +98,7 @@ export class WebFunctionOrigin extends cloudfront.OriginBase {
     }
     super(originDomainName(endpoint, props.region), props);
     validateTimeouts(endpoint, props);
+    this.validateResponseCompletionTimeoutWithReadTimeout(props.responseCompletionTimeout, props.readTimeout);
     this.props = props;
   }
 
@@ -110,8 +113,10 @@ class WebFunctionOriginWithOac extends cloudfront.OriginBase {
   constructor(private readonly endpoint: WebFunctionEndpoint, private readonly props: WebFunctionOriginWithOacProps) {
     super(originDomainName(endpoint, props.region), props);
     validateTimeouts(endpoint, props);
+    this.validateResponseCompletionTimeoutWithReadTimeout(props.responseCompletionTimeout, props.readTimeout);
     // The global domain routes to any of the endpoint's regions, so CloudFront signs for all of them.
     this.signingProtocol = endpoint.endpointType === WebFunctionEndpointType.MULTI_REGION ? 'sigv4a' : 'sigv4';
+    if (props.originAccessControl) assertOriginAccessControl(endpoint, props.originAccessControl, this.signingProtocol);
   }
 
   public bind(scope: Construct, options: cloudfront.OriginBindOptions): cloudfront.OriginBindConfig {
@@ -120,6 +125,9 @@ class WebFunctionOriginWithOac extends cloudfront.OriginBase {
     if (stack !== Stack.of(this.endpoint)) {
       // The resource policy names the distribution, and the distribution names the endpoint: a reference cycle.
       throw new Error(`${scope.node.path}: a distribution with a WebFunctionOrigin must be in the function's stack (${Stack.of(this.endpoint).stackName})`);
+    }
+    if (options.distributionId === undefined) {
+      throw new Error(`${scope.node.path}: a WebFunctionOrigin with origin access control must be used by a cloudfront.Distribution (its ID scopes the resource policy)`);
     }
     const oac = this.props.originAccessControl ?? this.sharedOriginAccessControl(stack);
 
@@ -161,6 +169,26 @@ class WebFunctionOriginWithOac extends cloudfront.OriginBase {
       },
     });
     return oac;
+  }
+}
+
+/**
+ * Checks a given origin access control when its configuration is known (one created in this app, not imported):
+ * CloudFront rejects other settings for a Web Function origin only when the distribution deploys.
+ */
+function assertOriginAccessControl(endpoint: WebFunctionEndpoint, oac: cloudfront.IOriginAccessControlRef, protocol: string) {
+  const cfn = oac instanceof cloudfront.CfnOriginAccessControl
+    ? oac
+    : oac.node.children.find((c): c is cloudfront.CfnOriginAccessControl => c instanceof cloudfront.CfnOriginAccessControl);
+  if (cfn === undefined) return;
+  const config = Stack.of(cfn).resolve(cfn.originAccessControlConfig) as Record<string, unknown>;
+  const expected: Record<string, string> = { OriginAccessControlOriginType: 'lambda', SigningBehavior: 'always-amz-auth', SigningProtocol: protocol };
+  const wrong = Object.entries(expected).filter(([key, value]) => {
+    const actual = config[key] ?? config[key.charAt(0).toLowerCase() + key.slice(1)];
+    return typeof actual === 'string' && actual !== value;
+  });
+  if (wrong.length > 0) {
+    throw new Error(`${endpoint.node.path}: the origin access control ${oac.node.path} must have ${wrong.map(([k, v]) => `${k} '${v}'`).join(', ')} for this endpoint`);
   }
 }
 
