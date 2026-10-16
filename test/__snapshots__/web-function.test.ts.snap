@@ -4,19 +4,18 @@ exports[`logical IDs are stable (changing them replaces resources and URLs) 1`] 
 [
   "AWS::IAM::Role ApiServiceRole1BD550DA",
   "AWS::IAM::Role CustomLambdaWebFunctionProviderCustomResourceProviderRoleCC6F3037",
-  "AWS::IAM::Role CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092",
   "AWS::Lambda::Function CustomLambdaWebFunctionProviderCustomResourceProviderHandler4723E976",
-  "AWS::Lambda::Function CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F",
   "AWS::Lambda::WebFunction ApiF70053CD",
   "AWS::Lambda::WebFunctionEndpoint ApiEndpointD56F57DF",
   "AWS::Lambda::WebFunctionRevision ApiRevision2114960A",
+  "AWS::Logs::LogGroup LambdaWebFunctionProviderLogs43D2D9D7",
   "AWS::S3::Bucket LambdaWebFunctionCodeBucket1FADBC2E",
   "AWS::S3::BucketPolicy LambdaWebFunctionCodeBucketPolicyA56FDFAC",
   "Custom::LambdaWebCode ApiCodeCopy59B54863",
+  "Custom::LambdaWebCodeBucketCleanup LambdaWebFunctionCodeBucketCleanup",
   "Custom::LambdaWebLogGroup ApiLocalLogsFF276554",
   "Custom::LambdaWebLogGroup ApiLocalLogsuseast1E916DB9E",
   "Custom::LambdaWebLogGroup ApiLogsCD139AD4",
   "Custom::LambdaWebRevisionCleanup ApiRevisionCleanup3BE48615",
-  "Custom::S3AutoDeleteObjects LambdaWebFunctionCodeBucketAutoDeleteObjectsCustomResource2144CC47",
 ]
 `;

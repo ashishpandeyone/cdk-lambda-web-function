@@ -43,13 +43,45 @@ describe('code', () => {
       SourceKey: Match.stringLikeRegexp('^[0-9a-f]{64}\\.zip$'),
       DestinationKey: Match.stringLikeRegexp(`^web-functions/${a.node.addr}/[0-9a-f]{64}\\.zip$`),
     });
-    // One provider Lambda for the whole stack.
-    t.resourceCountIs('AWS::Lambda::Function', 2); // provider + S3 auto-delete-objects provider
-    t.hasResourceProperties('AWS::Lambda::Function', { Runtime: 'nodejs24.x', Timeout: 300, Description: Match.stringLikeRegexp('Lambda Web Functions') });
+    // One provider Lambda for the whole stack; it also empties the bucket on delete (no S3 auto-delete-objects provider).
+    t.resourceCountIs('AWS::Lambda::Function', 1);
+    t.resourceCountIs('Custom::S3AutoDeleteObjects', 0);
+    t.hasResourceProperties('AWS::Lambda::Function', {
+      Runtime: 'nodejs24.x',
+      Timeout: 300,
+      Description: Match.stringLikeRegexp('Lambda Web Functions'),
+      // Its logs go to a group the stack owns (retention, deleted with the stack), created before it.
+      LoggingConfig: { LogGroup: { Ref: Match.stringLikeRegexp('^LambdaWebFunctionProviderLogs') }, LogFormat: 'Text' },
+    });
+    t.resourceCountIs('AWS::Logs::LogGroup', 1);
+    t.hasResource('AWS::Logs::LogGroup', { Properties: { RetentionInDays: 30 }, DeletionPolicy: 'Delete', UpdateReplacePolicy: 'Delete' });
+    const [handler] = Object.values(t.findResources('AWS::Lambda::Function')) as any[];
+    expect(handler.DependsOn).toEqual(expect.arrayContaining([expect.stringMatching(/^LambdaWebFunctionProviderLogs/)]));
+    // It may only write to that group: no AWSLambdaBasicExecutionRole (logs:CreateLogGroup would let late log lines
+    // re-create the group after the stack deleted it).
+    const providerRole = Object.entries(t.findResources('AWS::IAM::Role')).find(([k]) => k.startsWith('CustomLambdaWebFunctionProvider'))![1] as any;
+    expect(providerRole.Properties.ManagedPolicyArns).toBeUndefined();
+    expect(providerRole.Properties.Policies[0].PolicyDocument.Statement).toContainEqual({
+      Effect: 'Allow',
+      Action: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      Resource: { 'Fn::GetAtt': [expect.stringMatching(/^LambdaWebFunctionProviderLogs/), 'Arn'] },
+    });
+    const allowed = JSON.stringify(providerRole.Properties.Policies[0].PolicyDocument.Statement);
+    expect(allowed).not.toMatch(/"logs:CreateLogGroup"[^\]]*"Resource":"\*"/);
+    t.hasResourceProperties('Custom::LambdaWebCodeBucketCleanup', { BucketName: { Ref: Match.stringLikeRegexp('^LambdaWebFunctionCodeBucket') } });
     // ListBucket makes HeadObject on a missing key a 404 (not a 403).
     const role = Object.values(t.findResources('AWS::IAM::Role')).find((r: any) => JSON.stringify(r).includes('s3:PutObject')) as any;
     expect(role.Properties.Policies[0].PolicyDocument.Statement).toContainEqual({
       Effect: 'Allow', Action: 's3:ListBucket', Resource: { 'Fn::GetAtt': [expect.stringMatching(/^LambdaWebFunctionCodeBucket/), 'Arn'] },
+    });
+    // Emptying the bucket on delete: every version of every object.
+    expect(role.Properties.Policies[0].PolicyDocument.Statement).toContainEqual({
+      Effect: 'Allow', Action: 's3:ListBucketVersions', Resource: { 'Fn::GetAtt': [expect.stringMatching(/^LambdaWebFunctionCodeBucket/), 'Arn'] },
+    });
+    expect(role.Properties.Policies[0].PolicyDocument.Statement).toContainEqual({
+      Effect: 'Allow',
+      Action: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
+      Resource: { 'Fn::Join': ['', [{ 'Fn::GetAtt': [expect.stringMatching(/^LambdaWebFunctionCodeBucket/), 'Arn'] }, '/*']] },
     });
     // The revision pins the version returned by the copy.
     expect(stack.resolve(a.location.objectVersion)).toEqual({ 'Fn::GetAtt': [expect.stringMatching(/^ACopy/), 'VersionId'] });

@@ -114,3 +114,10 @@ export interface RegionalAlarmProperties {
   /** PutMetricAlarm's `TreatMissingData`. */
   readonly TreatMissingData: string;
 }
+
+/** Empties the stack's code bucket (every object version and delete marker) when the stack deletes it. */
+export const CODE_BUCKET_CLEANUP_RESOURCE_TYPE = 'Custom::LambdaWebCodeBucketCleanup';
+
+export interface CodeBucketCleanupProperties {
+  readonly BucketName: string;
+}

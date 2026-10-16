@@ -1,4 +1,4 @@
-import { Duration, type IResource, Lazy, Names, RemovalPolicy, Resource, Stack, Token, Validations } from 'aws-cdk-lib';
+import { Arn, ArnFormat, Duration, type IResource, Lazy, Names, RemovalPolicy, Resource, Stack, Token, Validations } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -150,7 +150,7 @@ export interface WebFunctionProps extends WebFunctionOptions {
 }
 
 /**
- * A Lambda Web Function.
+ * A Lambda Web Function, created in this app (`WebFunction`) or imported (`WebFunction.fromWebFunctionArn`).
  */
 export interface IWebFunction extends IResource, lambda.IWebFunctionRef {
   /**
@@ -166,6 +166,136 @@ export interface IWebFunction extends IResource, lambda.IWebFunctionRef {
    * @attribute
    */
   readonly webFunctionArn: string;
+
+  /**
+   * Allows `grantee` to call the function's endpoint (`lambda:InvokeWebFunctionEndpoint`): the default endpoint
+   * of a `WebFunction`; for an imported function, the endpoint named in its attributes, or every endpoint.
+   * [disable-awslint:no-grants]
+   */
+  grantInvoke(grantee: iam.IGrantable): iam.Grant;
+
+  /**
+   * A metric of the function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`).
+   */
+  metric(metricName: string, props?: cloudwatch.MetricOptions): cloudwatch.Metric;
+
+  /** Time the execution environments were active (`EnvironmentActiveTime`). */
+  metricActiveTime(props?: cloudwatch.MetricOptions): cloudwatch.Metric;
+
+  /** CPU time the execution environments used (`EnvironmentCPUTime`). */
+  metricCpuTime(props?: cloudwatch.MetricOptions): cloudwatch.Metric;
+
+  /** Requests an execution environment handled at once (`EnvironmentConcurrentRequests`, maximum). */
+  metricConcurrentRequests(props?: cloudwatch.MetricOptions): cloudwatch.Metric;
+
+  /** Peak memory an execution environment used (`EnvironmentMaxMemoryUsage`, maximum). */
+  metricMaxMemoryUsage(props?: cloudwatch.MetricOptions): cloudwatch.Metric;
+
+  /** Bytes sent in responses (`ResponseBytes`). */
+  metricResponseBytes(props?: cloudwatch.MetricOptions): cloudwatch.Metric;
+}
+
+/**
+ * Attributes of an existing Web Function. Give its ARN or its name.
+ */
+export interface WebFunctionAttributes {
+  /**
+   * The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another
+   * account or region.
+   *
+   * @default - built from `webFunctionName`, in this stack's account and region
+   */
+  readonly webFunctionArn?: string;
+
+  /**
+   * The function's name.
+   *
+   * @default - taken from `webFunctionArn`
+   */
+  readonly webFunctionName?: string;
+
+  /**
+   * The endpoint `grantInvoke` allows calling.
+   *
+   * @default - every endpoint of the function
+   */
+  readonly endpointName?: string;
+}
+
+/**
+ * What `WebFunction` and imported functions have in common.
+ */
+export abstract class WebFunctionBase extends Resource implements IWebFunction {
+  public abstract readonly webFunctionName: string;
+  public abstract readonly webFunctionArn: string;
+
+  /** A reference to this function, for APIs that accept `lambda.IWebFunctionRef`. */
+  public get webFunctionRef(): lambda.WebFunctionReference {
+    return { functionArn: this.webFunctionArn };
+  }
+
+  /**
+   * Allows `grantee` to call the function's endpoint.
+   * [disable-awslint:no-grants]
+   */
+  public abstract grantInvoke(grantee: iam.IGrantable): iam.Grant;
+
+  /**
+   * A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints.
+   * For request and error counts, use the endpoint's metrics (`fn.endpoint.metricRequests()`).
+   *
+   * Metrics are published in the region that served the request: pass `region` for another serving region.
+   * An alarm can only use metrics from its own stack's region.
+   *
+   * @default - sum over 1 minute, in the function's home region
+   */
+  public metric(metricName: string, props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    // An imported function in another region publishes its metrics there.
+    const region = !Token.isUnresolved(this.env.region) && this.env.region !== Stack.of(this).region ? this.env.region : undefined;
+    return new cloudwatch.Metric({
+      namespace: WEB_NAMESPACE,
+      metricName,
+      dimensionsMap: { FunctionName: this.webFunctionName },
+      statistic: cloudwatch.Stats.SUM,
+      period: DEFAULT_PERIOD,
+      region,
+      ...props,
+    });
+  }
+
+  /** Time the execution environments were active (`EnvironmentActiveTime`). */
+  public metricActiveTime(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('EnvironmentActiveTime', props);
+  }
+
+  /** CPU time the execution environments used (`EnvironmentCPUTime`). */
+  public metricCpuTime(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('EnvironmentCPUTime', props);
+  }
+
+  /**
+   * Requests an execution environment handled at once (`EnvironmentConcurrentRequests`), to compare with
+   * `maxConcurrencyPerEnvironment`.
+   *
+   * @default - maximum over 1 minute
+   */
+  public metricConcurrentRequests(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('EnvironmentConcurrentRequests', { statistic: cloudwatch.Stats.MAXIMUM, ...props });
+  }
+
+  /**
+   * Peak memory an execution environment used (`EnvironmentMaxMemoryUsage`); each environment has 2 GB.
+   *
+   * @default - maximum over 1 minute
+   */
+  public metricMaxMemoryUsage(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('EnvironmentMaxMemoryUsage', { statistic: cloudwatch.Stats.MAXIMUM, ...props });
+  }
+
+  /** Bytes sent in responses (`ResponseBytes`). */
+  public metricResponseBytes(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('ResponseBytes', props);
+  }
 }
 
 /**
@@ -175,11 +305,32 @@ export interface IWebFunction extends IResource, lambda.IWebFunctionRef {
  * and the newest `revisionRetention` are kept), a default HTTPS endpoint, an execution role, and owns
  * the function's log groups in every region its endpoints serve from.
  *
- * Importing existing functions (`fromXxx` methods) is planned after 0.1.
+ * Use `fromWebFunctionArn`, `fromWebFunctionName` or `fromWebFunctionAttributes` for a function defined elsewhere.
  *
  * @resource AWS::Lambda::WebFunction
  */
-export class WebFunction extends Resource implements IWebFunction, iam.IGrantable {
+export class WebFunction extends WebFunctionBase implements iam.IGrantable {
+  /**
+   * Imports an existing Web Function by its ARN (in any account or region).
+   */
+  public static fromWebFunctionArn(scope: Construct, id: string, webFunctionArn: string): IWebFunction {
+    return WebFunction.fromWebFunctionAttributes(scope, id, { webFunctionArn });
+  }
+
+  /**
+   * Imports an existing Web Function in this stack's account and region by its name.
+   */
+  public static fromWebFunctionName(scope: Construct, id: string, webFunctionName: string): IWebFunction {
+    return WebFunction.fromWebFunctionAttributes(scope, id, { webFunctionName });
+  }
+
+  /**
+   * Imports an existing Web Function: give its ARN or its name, and optionally the endpoint `grantInvoke` allows.
+   */
+  public static fromWebFunctionAttributes(scope: Construct, id: string, attrs: WebFunctionAttributes): IWebFunction {
+    return new ImportedWebFunction(scope, id, attrs);
+  }
+
   public readonly webFunctionName: string;
   public readonly webFunctionArn: string;
 
@@ -214,11 +365,6 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
   private readonly logOptions: Pick<WebFunctionProps, 'logRetention' | 'logRemovalPolicy'>;
   private readonly resource: lambda.CfnWebFunction;
   private readonly revisionCleanup: RevisionCleanup;
-
-  /** A reference to this function, for APIs that accept `lambda.IWebFunctionRef`. */
-  public get webFunctionRef(): lambda.WebFunctionReference {
-    return { functionArn: this.webFunctionArn };
-  }
 
   constructor(scope: Construct, id: string, props: WebFunctionProps) {
     super(scope, id);
@@ -353,60 +499,6 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
     return this.grants.invoke(grantee);
   }
 
-  /**
-   * A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints.
-   * For request and error counts, use the endpoint's metrics (`fn.endpoint.metricRequests()`).
-   *
-   * Metrics are published in the region that served the request: pass `region` for another serving region.
-   * An alarm can only use metrics from its own stack's region.
-   *
-   * @default - sum over 1 minute, in the home region
-   */
-  public metric(metricName: string, props?: cloudwatch.MetricOptions): cloudwatch.Metric {
-    return new cloudwatch.Metric({
-      namespace: WEB_NAMESPACE,
-      metricName,
-      dimensionsMap: { FunctionName: this.webFunctionName },
-      statistic: cloudwatch.Stats.SUM,
-      period: DEFAULT_PERIOD,
-      ...props,
-    });
-  }
-
-  /** Time the execution environments were active (`EnvironmentActiveTime`). */
-  public metricActiveTime(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
-    return this.metric('EnvironmentActiveTime', props);
-  }
-
-  /** CPU time the execution environments used (`EnvironmentCPUTime`). */
-  public metricCpuTime(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
-    return this.metric('EnvironmentCPUTime', props);
-  }
-
-  /**
-   * Requests an execution environment handled at once (`EnvironmentConcurrentRequests`), to compare with
-   * `maxConcurrencyPerEnvironment`.
-   *
-   * @default - maximum over 1 minute
-   */
-  public metricConcurrentRequests(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
-    return this.metric('EnvironmentConcurrentRequests', { statistic: cloudwatch.Stats.MAXIMUM, ...props });
-  }
-
-  /**
-   * Peak memory an execution environment used (`EnvironmentMaxMemoryUsage`); each environment has 2 GB.
-   *
-   * @default - maximum over 1 minute
-   */
-  public metricMaxMemoryUsage(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
-    return this.metric('EnvironmentMaxMemoryUsage', { statistic: cloudwatch.Stats.MAXIMUM, ...props });
-  }
-
-  /** Bytes sent in responses (`ResponseBytes`). */
-  public metricResponseBytes(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
-    return this.metric('ResponseBytes', props);
-  }
-
   private createEndpoint(id: string, options: AddWebFunctionEndpointOptions, namePrefix: string, nameSeed?: string): WebFunctionEndpoint {
     if (this.endpoints.length >= MAX_ENDPOINTS) {
       throw new Error(`${this.node.path}: a Web Function can have at most ${MAX_ENDPOINTS} endpoints`);
@@ -451,4 +543,45 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
       removalPolicy: this.logOptions.logRemovalPolicy ?? RemovalPolicy.RETAIN,
     });
   }
+}
+
+/** A Web Function defined outside this app. */
+class ImportedWebFunction extends WebFunctionBase {
+  public readonly webFunctionName: string;
+  public readonly webFunctionArn: string;
+  private readonly endpointName?: string;
+
+  constructor(scope: Construct, id: string, attrs: WebFunctionAttributes) {
+    const arn = importedArn(scope, id, attrs);
+    super(scope, id, { environmentFromArn: arn });
+    this.webFunctionArn = arn;
+    this.webFunctionName = attrs.webFunctionName ?? Arn.split(arn, ArnFormat.SLASH_RESOURCE_NAME).resourceName!;
+    if (attrs.endpointName !== undefined) assertResourceName(this, 'endpointName', attrs.endpointName);
+    this.endpointName = attrs.endpointName;
+  }
+
+  public grantInvoke(grantee: iam.IGrantable): iam.Grant {
+    return WebFunctionGrants._forEndpointArns([`${this.webFunctionArn}/endpoint/${this.endpointName ?? '*'}`]).invoke(grantee);
+  }
+}
+
+function importedArn(scope: Construct, id: string, attrs: WebFunctionAttributes): string {
+  const path = `${scope.node.path}/${id}`;
+  if ((attrs.webFunctionArn === undefined) === (attrs.webFunctionName === undefined)) {
+    throw new Error(`${path}: give either webFunctionArn or webFunctionName`);
+  }
+  if (attrs.webFunctionName !== undefined) {
+    if (!Token.isUnresolved(attrs.webFunctionName)) {
+      // Validated against the scope, before the import exists.
+      assertResourceName(scope, 'webFunctionName', attrs.webFunctionName);
+    }
+    return Stack.of(scope).formatArn({
+      service: 'lambda', resource: 'web-function', resourceName: attrs.webFunctionName, arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+    });
+  }
+  const arn = attrs.webFunctionArn!;
+  if (!Token.isUnresolved(arn) && !/^arn:[^:]+:lambda:[a-z0-9-]+:\d{12}:web-function\/[A-Za-z0-9_-]{1,64}$/.test(arn)) {
+    throw new Error(`${path}: '${arn}' is not a Web Function ARN (arn:<partition>:lambda:<region>:<account>:web-function/<name>)`);
+  }
+  return arn;
 }
