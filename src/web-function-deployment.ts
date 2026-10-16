@@ -1,10 +1,59 @@
 import { Duration, Token } from 'aws-cdk-lib';
 import type * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import type { ResolvedRollbackOptions } from './private/rollback';
 
 /** Longest total wait of a deployment: the deployment step must finish within CloudFormation's 1-hour custom resource limit. */
 const MAX_TOTAL_WAIT_MINUTES = 45;
 /** Most traffic steps: each one also waits for the endpoint to update in every region. */
 const MAX_STEPS = 20;
+
+/**
+ * Alarms an endpoint creates on its own metrics to stop a canary or linear deployment.
+ *
+ * The endpoint creates one alarm per threshold in every region it serves from (metrics are published
+ * in the region that served the request, and an alarm can only watch metrics in its own region).
+ * Lambda Web Function metrics have no revision dimension, so the alarms watch the whole endpoint: while
+ * the new revision gets 10% of the traffic, its errors are about a tenth of the endpoint's.
+ */
+export interface WebFunctionRollbackOptions {
+  /**
+   * Roll back when more than this percent of the endpoint's requests get a 5XX response (0-100).
+   *
+   * 5XX includes the platform's 503s while an endpoint scales up for a sudden burst, not only your application's errors.
+   *
+   * @default - no server error alarm
+   */
+  readonly serverErrorRate?: number;
+
+  /**
+   * Roll back when more than this percent of the endpoint's requests get a 4XX response (0-100).
+   * Requests over `rateLimit` or `maxEnvironments` get 429, which counts here.
+   *
+   * @default - no client error alarm
+   */
+  readonly clientErrorRate?: number;
+
+  /**
+   * Periods with fewer requests than this don't count, so one failed request out of two doesn't roll back.
+   *
+   * @default 10
+   */
+  readonly minimumRequests?: number;
+
+  /**
+   * The period each rate is measured over (at least 1 minute, in whole minutes).
+   *
+   * @default Duration.minutes(1)
+   */
+  readonly period?: Duration;
+
+  /**
+   * How many consecutive periods must breach a threshold before the deployment rolls back.
+   *
+   * @default 2
+   */
+  readonly evaluationPeriods?: number;
+}
 
 /**
  * Options for a canary deployment.
@@ -31,6 +80,14 @@ export interface WebFunctionCanaryDeploymentOptions {
    * @default - no alarms: traffic moves on a timer
    */
   readonly alarms?: cloudwatch.IAlarm[];
+
+  /**
+   * Alarms on the endpoint's own error rates, created by the endpoint in every region it serves from.
+   * They stop the deployment like `alarms` (both can be used together).
+   *
+   * @default - no endpoint alarms
+   */
+  readonly rollbackOn?: WebFunctionRollbackOptions;
 }
 
 /**
@@ -57,6 +114,14 @@ export interface WebFunctionLinearDeploymentOptions {
    * @default - no alarms: traffic moves on a timer
    */
   readonly alarms?: cloudwatch.IAlarm[];
+
+  /**
+   * Alarms on the endpoint's own error rates, created by the endpoint in every region it serves from.
+   * They stop the deployment like `alarms` (both can be used together).
+   *
+   * @default - no endpoint alarms
+   */
+  readonly rollbackOn?: WebFunctionRollbackOptions;
 }
 
 /**
@@ -67,7 +132,7 @@ export class WebFunctionDeployment {
    * All traffic moves to the new revision at once, as soon as it's ready (the default).
    */
   public static allAtOnce(): WebFunctionDeployment {
-    return new WebFunctionDeployment('allAtOnce', [100], 0, []);
+    return new WebFunctionDeployment('allAtOnce', [100], 0, [], undefined);
   }
 
   /**
@@ -76,7 +141,7 @@ export class WebFunctionDeployment {
   public static canary(options: WebFunctionCanaryDeploymentOptions): WebFunctionDeployment {
     const percent = wholePercent('canary', 'percent', options.percent, 1, 99);
     const bake = minutes('canary', 'bake', options.bake, MAX_TOTAL_WAIT_MINUTES);
-    return new WebFunctionDeployment('canary', [percent, 100], bake.toSeconds(), options.alarms ?? []);
+    return new WebFunctionDeployment('canary', [percent, 100], bake.toSeconds(), options.alarms ?? [], rollbackOn('canary', options.rollbackOn));
   }
 
   /**
@@ -92,7 +157,7 @@ export class WebFunctionDeployment {
     if (total > MAX_TOTAL_WAIT_MINUTES * 60) {
       throw new Error(`WebFunctionDeployment.linear: ${steps.length - 1} intervals of ${interval.toHumanString()} take ${total / 60} minutes; at most ${MAX_TOTAL_WAIT_MINUTES} are allowed`);
     }
-    return new WebFunctionDeployment('linear', steps, interval.toSeconds(), options.alarms ?? []);
+    return new WebFunctionDeployment('linear', steps, interval.toSeconds(), options.alarms ?? [], rollbackOn('linear', options.rollbackOn));
   }
 
   /**
@@ -115,11 +180,21 @@ export class WebFunctionDeployment {
   /** @internal */
   public readonly _kind: string;
 
-  private constructor(kind: string, steps: number[], waitSeconds: number, alarms: cloudwatch.IAlarm[]) {
+  /**
+   * Thresholds for the alarms the endpoint creates, with defaults applied.
+   *
+   * @internal
+   */
+  public readonly _rollbackOn?: ResolvedRollbackOptions;
+
+  private constructor(
+    kind: string, steps: number[], waitSeconds: number, alarms: cloudwatch.IAlarm[], rollback: ResolvedRollbackOptions | undefined,
+  ) {
     this._kind = kind;
     this._steps = steps;
     this._waitSeconds = waitSeconds;
     this._alarms = alarms;
+    this._rollbackOn = rollback;
   }
 
   /**
@@ -145,4 +220,31 @@ function minutes(kind: string, name: string, value: Duration, maxMinutes: number
     throw new Error(`WebFunctionDeployment.${kind}: ${name} must be from 1 to ${maxMinutes} minutes, got ${Token.isUnresolved(seconds) ? 'a token' : value.toHumanString()}`);
   }
   return Duration.seconds(seconds);
+}
+
+function rollbackOn(kind: string, options: WebFunctionRollbackOptions | undefined): ResolvedRollbackOptions | undefined {
+  if (options === undefined) return undefined;
+  const fail = (message: string) => {
+    throw new Error(`WebFunctionDeployment.${kind}: rollbackOn.${message}`);
+  };
+  if (options.serverErrorRate === undefined && options.clientErrorRate === undefined) {
+    fail('serverErrorRate or rollbackOn.clientErrorRate is required');
+  }
+  for (const [name, rate] of [['serverErrorRate', options.serverErrorRate], ['clientErrorRate', options.clientErrorRate]] as const) {
+    if (rate !== undefined && (Token.isUnresolved(rate) || !(rate >= 0 && rate < 100))) fail(`${name} must be a percentage from 0 to below 100, got ${rate}`);
+  }
+  const minimumRequests = options.minimumRequests ?? 10;
+  if (Token.isUnresolved(minimumRequests) || !Number.isInteger(minimumRequests) || minimumRequests < 1) {
+    fail(`minimumRequests must be a whole number from 1, got ${minimumRequests}`);
+  }
+  const period = options.period ?? Duration.minutes(1);
+  const seconds = period.toSeconds();
+  if (Token.isUnresolved(seconds) || seconds < 60 || seconds % 60 !== 0) {
+    fail(`period must be whole minutes, at least 1, got ${Token.isUnresolved(seconds) ? 'a token' : period.toHumanString()}`);
+  }
+  const evaluationPeriods = options.evaluationPeriods ?? 2;
+  if (Token.isUnresolved(evaluationPeriods) || !Number.isInteger(evaluationPeriods) || evaluationPeriods < 1) {
+    fail(`evaluationPeriods must be a whole number from 1, got ${evaluationPeriods}`);
+  }
+  return { serverErrorRate: options.serverErrorRate, clientErrorRate: options.clientErrorRate, minimumRequests, period, evaluationPeriods };
 }

@@ -81,6 +81,8 @@ export interface TrafficShiftProps {
   readonly endpointName: string;
   readonly revisionId: string;
   readonly deployment: WebFunctionDeployment;
+  /** ARNs of alarms the endpoint created (`rollbackOn`), watched with the deployment's own `alarms`. */
+  readonly alarmArns?: string[];
   /** The endpoint's other settings: any change makes the shift run, so it can re-check the traffic before CloudFormation writes it. */
   readonly endpointConfig: unknown;
 }
@@ -105,13 +107,14 @@ export class TrafficShift extends Construct {
     });
 
     const deployment = props.deployment;
+    const alarmArns = [...deployment._alarms.map((a) => a.alarmArn), ...(props.alarmArns ?? [])];
     const properties: TrafficShiftProperties = {
       FunctionArn: props.functionArn,
       EndpointName: props.endpointName,
       RevisionId: props.revisionId,
       Steps: deployment._steps.join(','),
       WaitSeconds: String(deployment._waitSeconds),
-      AlarmArns: deployment._alarms.length > 0 ? deployment._alarms.map((a) => a.alarmArn) : undefined,
+      AlarmArns: alarmArns.length > 0 ? alarmArns : undefined,
       EndpointConfig: createHash('sha256').update(JSON.stringify(stack.resolve(props.endpointConfig))).digest('hex').slice(0, 16),
     };
     this.resource = new CustomResource(this, 'Resource', {

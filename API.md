@@ -55,6 +55,12 @@ new NodejsWebFunction(scope: Construct, id: string, props: NodejsWebFunctionProp
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addEnvironment">addEnvironment</a></code> | Adds an environment variable. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addToRolePolicy">addToRolePolicy</a></code> | Adds a statement to the execution role's policy. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.grantInvoke">grantInvoke</a></code> | Allows `grantee` to call the endpoint. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metric">metric</a></code> | A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricActiveTime">metricActiveTime</a></code> | Time the execution environments were active (`EnvironmentActiveTime`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricConcurrentRequests">metricConcurrentRequests</a></code> | Requests an execution environment handled at once (`EnvironmentConcurrentRequests`), to compare with `maxConcurrencyPerEnvironment`. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricCpuTime">metricCpuTime</a></code> | CPU time the execution environments used (`EnvironmentCPUTime`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricMaxMemoryUsage">metricMaxMemoryUsage</a></code> | Peak memory an execution environment used (`EnvironmentMaxMemoryUsage`); |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricResponseBytes">metricResponseBytes</a></code> | Bytes sent in responses (`ResponseBytes`). |
 
 ---
 
@@ -201,6 +207,103 @@ Shortcut for `grants.invoke(grantee)`, as on `lambda.Function`.
 ###### `grantee`<sup>Required</sup> <a name="grantee" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.grantInvoke.parameter.grantee"></a>
 
 - *Type:* aws-cdk-lib.aws_iam.IGrantable
+
+---
+
+##### `metric` <a name="metric" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metric"></a>
+
+```typescript
+public metric(metricName: string, props?: MetricOptions): Metric
+```
+
+A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints.
+
+For request and error counts, use the endpoint's metrics (`fn.endpoint.metricRequests()`).
+
+Metrics are published in the region that served the request: pass `region` for another serving region.
+An alarm can only use metrics from its own stack's region.
+
+###### `metricName`<sup>Required</sup> <a name="metricName" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metric.parameter.metricName"></a>
+
+- *Type:* string
+
+---
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metric.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricActiveTime` <a name="metricActiveTime" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricActiveTime"></a>
+
+```typescript
+public metricActiveTime(props?: MetricOptions): Metric
+```
+
+Time the execution environments were active (`EnvironmentActiveTime`).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricActiveTime.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricConcurrentRequests` <a name="metricConcurrentRequests" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricConcurrentRequests"></a>
+
+```typescript
+public metricConcurrentRequests(props?: MetricOptions): Metric
+```
+
+Requests an execution environment handled at once (`EnvironmentConcurrentRequests`), to compare with `maxConcurrencyPerEnvironment`.
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricConcurrentRequests.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricCpuTime` <a name="metricCpuTime" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricCpuTime"></a>
+
+```typescript
+public metricCpuTime(props?: MetricOptions): Metric
+```
+
+CPU time the execution environments used (`EnvironmentCPUTime`).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricCpuTime.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricMaxMemoryUsage` <a name="metricMaxMemoryUsage" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricMaxMemoryUsage"></a>
+
+```typescript
+public metricMaxMemoryUsage(props?: MetricOptions): Metric
+```
+
+Peak memory an execution environment used (`EnvironmentMaxMemoryUsage`);
+
+each environment has 2 GB.
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricMaxMemoryUsage.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricResponseBytes` <a name="metricResponseBytes" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricResponseBytes"></a>
+
+```typescript
+public metricResponseBytes(props?: MetricOptions): Metric
+```
+
+Bytes sent in responses (`ResponseBytes`).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.metricResponseBytes.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
 
 ---
 
@@ -527,6 +630,12 @@ new WebFunction(scope: Construct, id: string, props: WebFunctionProps)
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.addEnvironment">addEnvironment</a></code> | Adds an environment variable. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.addToRolePolicy">addToRolePolicy</a></code> | Adds a statement to the execution role's policy. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.grantInvoke">grantInvoke</a></code> | Allows `grantee` to call the endpoint. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.metric">metric</a></code> | A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricActiveTime">metricActiveTime</a></code> | Time the execution environments were active (`EnvironmentActiveTime`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricConcurrentRequests">metricConcurrentRequests</a></code> | Requests an execution environment handled at once (`EnvironmentConcurrentRequests`), to compare with `maxConcurrencyPerEnvironment`. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricCpuTime">metricCpuTime</a></code> | CPU time the execution environments used (`EnvironmentCPUTime`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricMaxMemoryUsage">metricMaxMemoryUsage</a></code> | Peak memory an execution environment used (`EnvironmentMaxMemoryUsage`); |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricResponseBytes">metricResponseBytes</a></code> | Bytes sent in responses (`ResponseBytes`). |
 
 ---
 
@@ -673,6 +782,103 @@ Shortcut for `grants.invoke(grantee)`, as on `lambda.Function`.
 ###### `grantee`<sup>Required</sup> <a name="grantee" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.grantInvoke.parameter.grantee"></a>
 
 - *Type:* aws-cdk-lib.aws_iam.IGrantable
+
+---
+
+##### `metric` <a name="metric" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metric"></a>
+
+```typescript
+public metric(metricName: string, props?: MetricOptions): Metric
+```
+
+A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints.
+
+For request and error counts, use the endpoint's metrics (`fn.endpoint.metricRequests()`).
+
+Metrics are published in the region that served the request: pass `region` for another serving region.
+An alarm can only use metrics from its own stack's region.
+
+###### `metricName`<sup>Required</sup> <a name="metricName" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metric.parameter.metricName"></a>
+
+- *Type:* string
+
+---
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metric.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricActiveTime` <a name="metricActiveTime" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricActiveTime"></a>
+
+```typescript
+public metricActiveTime(props?: MetricOptions): Metric
+```
+
+Time the execution environments were active (`EnvironmentActiveTime`).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricActiveTime.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricConcurrentRequests` <a name="metricConcurrentRequests" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricConcurrentRequests"></a>
+
+```typescript
+public metricConcurrentRequests(props?: MetricOptions): Metric
+```
+
+Requests an execution environment handled at once (`EnvironmentConcurrentRequests`), to compare with `maxConcurrencyPerEnvironment`.
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricConcurrentRequests.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricCpuTime` <a name="metricCpuTime" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricCpuTime"></a>
+
+```typescript
+public metricCpuTime(props?: MetricOptions): Metric
+```
+
+CPU time the execution environments used (`EnvironmentCPUTime`).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricCpuTime.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricMaxMemoryUsage` <a name="metricMaxMemoryUsage" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricMaxMemoryUsage"></a>
+
+```typescript
+public metricMaxMemoryUsage(props?: MetricOptions): Metric
+```
+
+Peak memory an execution environment used (`EnvironmentMaxMemoryUsage`);
+
+each environment has 2 GB.
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricMaxMemoryUsage.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricResponseBytes` <a name="metricResponseBytes" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricResponseBytes"></a>
+
+```typescript
+public metricResponseBytes(props?: MetricOptions): Metric
+```
+
+Bytes sent in responses (`ResponseBytes`).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.metricResponseBytes.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
 
 ---
 
@@ -954,6 +1160,15 @@ Endpoints are created only through `WebFunction`, which owns their log groups in
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.toString">toString</a></code> | Returns a string representation of this construct. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.with">with</a></code> | Applies one or more mixins to this construct. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.grantInvoke">grantInvoke</a></code> | Allows `grantee` to call this endpoint. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metric">metric</a></code> | A metric of this endpoint in `AWS/Lambda/Web` (dimensions `FunctionName` and `EndpointName`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricActiveEnvironments">metricActiveEnvironments</a></code> | Execution environments serving the endpoint (`EndpointActiveEnvironments`), to compare with `maxEnvironments`. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricClientErrorRate">metricClientErrorRate</a></code> | The percentage of requests answered with a 4XX status (math expression; |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricClientErrors">metricClientErrors</a></code> | Requests answered with a 4XX status (`HTTPResponseStatusClass4XX`), including 429s from `rateLimit` and `maxEnvironments`. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricEnvironmentThrottles">metricEnvironmentThrottles</a></code> | Requests rejected with 429 because the endpoint reached `maxEnvironments` (`EndpointActiveEnvironmentThrottles`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricRequests">metricRequests</a></code> | Requests the endpoint served (`ExecutedRequests`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricRequestThrottles">metricRequestThrottles</a></code> | Requests rejected with 429 because the endpoint reached its `rateLimit` (`EndpointRequestThrottles`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricServerErrorRate">metricServerErrorRate</a></code> | The percentage of requests answered with a 5XX status (math expression; |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricServerErrors">metricServerErrors</a></code> | Requests answered with a 5XX status (`HTTPResponseStatusClass5XX`). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.regionalUrl">regionalUrl</a></code> | The URL of this endpoint in one region. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.routeTraffic">routeTraffic</a></code> | Routes the endpoint to `revision` instead of the function's current revision, optionally sharing traffic with one more revision (`additionalRevisions`, which gets its weight; |
 
@@ -1002,6 +1217,152 @@ Shortcut for `grants.invoke(grantee)`.
 ###### `grantee`<sup>Required</sup> <a name="grantee" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.grantInvoke.parameter.grantee"></a>
 
 - *Type:* aws-cdk-lib.aws_iam.IGrantable
+
+---
+
+##### `metric` <a name="metric" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metric"></a>
+
+```typescript
+public metric(metricName: string, props?: MetricOptions): Metric
+```
+
+A metric of this endpoint in `AWS/Lambda/Web` (dimensions `FunctionName` and `EndpointName`).
+
+Metrics are published in the region that served the request: pass `region` for one of the endpoint's
+other regions. An alarm can only use metrics from its own stack's region.
+
+###### `metricName`<sup>Required</sup> <a name="metricName" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metric.parameter.metricName"></a>
+
+- *Type:* string
+
+---
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metric.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricActiveEnvironments` <a name="metricActiveEnvironments" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricActiveEnvironments"></a>
+
+```typescript
+public metricActiveEnvironments(props?: MetricOptions): Metric
+```
+
+Execution environments serving the endpoint (`EndpointActiveEnvironments`), to compare with `maxEnvironments`.
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricActiveEnvironments.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricClientErrorRate` <a name="metricClientErrorRate" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricClientErrorRate"></a>
+
+```typescript
+public metricClientErrorRate(props?: MetricOptions): MathExpression
+```
+
+The percentage of requests answered with a 4XX status (math expression;
+
+periods with no 4XX count as 0).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricClientErrorRate.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricClientErrors` <a name="metricClientErrors" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricClientErrors"></a>
+
+```typescript
+public metricClientErrors(props?: MetricOptions): Metric
+```
+
+Requests answered with a 4XX status (`HTTPResponseStatusClass4XX`), including 429s from `rateLimit` and `maxEnvironments`.
+
+The metric only exists once it's non-zero, so alarms should treat missing data as not breaching.
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricClientErrors.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricEnvironmentThrottles` <a name="metricEnvironmentThrottles" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricEnvironmentThrottles"></a>
+
+```typescript
+public metricEnvironmentThrottles(props?: MetricOptions): Metric
+```
+
+Requests rejected with 429 because the endpoint reached `maxEnvironments` (`EndpointActiveEnvironmentThrottles`).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricEnvironmentThrottles.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricRequests` <a name="metricRequests" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricRequests"></a>
+
+```typescript
+public metricRequests(props?: MetricOptions): Metric
+```
+
+Requests the endpoint served (`ExecutedRequests`).
+
+There's no separate count of successful (2XX) responses.
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricRequests.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricRequestThrottles` <a name="metricRequestThrottles" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricRequestThrottles"></a>
+
+```typescript
+public metricRequestThrottles(props?: MetricOptions): Metric
+```
+
+Requests rejected with 429 because the endpoint reached its `rateLimit` (`EndpointRequestThrottles`).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricRequestThrottles.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricServerErrorRate` <a name="metricServerErrorRate" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricServerErrorRate"></a>
+
+```typescript
+public metricServerErrorRate(props?: MetricOptions): MathExpression
+```
+
+The percentage of requests answered with a 5XX status (math expression;
+
+periods with no 5XX count as 0).
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricServerErrorRate.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
+
+---
+
+##### `metricServerErrors` <a name="metricServerErrors" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricServerErrors"></a>
+
+```typescript
+public metricServerErrors(props?: MetricOptions): Metric
+```
+
+Requests answered with a 5XX status (`HTTPResponseStatusClass5XX`).
+
+Includes the platform's 503s while the endpoint
+scales up for a sudden burst, not only your application's errors. The metric only exists once it's non-zero.
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricServerErrors.parameter.props"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.MetricOptions
 
 ---
 
@@ -1102,6 +1463,7 @@ Any object.
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.endpointType">endpointType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointType">WebFunctionEndpointType</a></code> | Where the endpoint serves traffic from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.grants">grants</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants">WebFunctionGrants</a></code> | Grants on this endpoint (e.g. `grants.invoke(principal)`). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.regions">regions</a></code> | <code>string[]</code> | Every region the endpoint serves from: the home region first, then the others in alphabetical order. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.rollbackAlarms">rollbackAlarms</a></code> | <code>aws-cdk-lib.aws_cloudwatch.IAlarm[]</code> | The alarms this endpoint created for its deployment's `rollbackOn`, one per threshold in every region it serves from (the home region's first). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.url">url</a></code> | <code>string</code> | The endpoint's URL: the global URL for `MULTI_REGION`, otherwise the home region's. |
 
 ---
@@ -1199,6 +1561,20 @@ public readonly regions: string[];
 - *Type:* string[]
 
 Every region the endpoint serves from: the home region first, then the others in alphabetical order.
+
+---
+
+##### `rollbackAlarms`<sup>Required</sup> <a name="rollbackAlarms" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.rollbackAlarms"></a>
+
+```typescript
+public readonly rollbackAlarms: IAlarm[];
+```
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.IAlarm[]
+
+The alarms this endpoint created for its deployment's `rollbackOn`, one per threshold in every region it serves from (the home region's first).
+
+Empty without `rollbackOn`.
 
 ---
 
@@ -2119,6 +2495,7 @@ const webFunctionCanaryDeploymentOptions: WebFunctionCanaryDeploymentOptions = {
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.bake">bake</a></code> | <code>aws-cdk-lib.Duration</code> | How long the new revision serves `percent` before it gets all traffic (1-45 minutes). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.percent">percent</a></code> | <code>number</code> | The share of traffic, in whole percent (1-99), that the new revision gets first. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.alarms">alarms</a></code> | <code>aws-cdk-lib.aws_cloudwatch.IAlarm[]</code> | Alarms that stop the deployment: if one is in ALARM, the endpoint goes back to the previous revision and the deployment fails, so CloudFormation rolls the stack back. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.rollbackOn">rollbackOn</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions">WebFunctionRollbackOptions</a></code> | Alarms on the endpoint's own error rates, created by the endpoint in every region it serves from. |
 
 ---
 
@@ -2161,6 +2538,21 @@ Alarms that stop the deployment: if one is in ALARM, the endpoint goes back to t
 
 They're checked before traffic moves, during the bake, and once the new revision has all traffic.
 Use alarms in any region (by ARN), including composite alarms.
+
+---
+
+##### `rollbackOn`<sup>Optional</sup> <a name="rollbackOn" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.rollbackOn"></a>
+
+```typescript
+public readonly rollbackOn: WebFunctionRollbackOptions;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions">WebFunctionRollbackOptions</a>
+- *Default:* no endpoint alarms
+
+Alarms on the endpoint's own error rates, created by the endpoint in every region it serves from.
+
+They stop the deployment like `alarms` (both can be used together).
 
 ---
 
@@ -2319,6 +2711,7 @@ const webFunctionLinearDeploymentOptions: WebFunctionLinearDeploymentOptions = {
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.interval">interval</a></code> | <code>aws-cdk-lib.Duration</code> | How long each step serves before the next one (at least 1 minute, and at most 45 minutes in total). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.percent">percent</a></code> | <code>number</code> | The share of traffic, in whole percent (5-50), that moves to the new revision at each step. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.alarms">alarms</a></code> | <code>aws-cdk-lib.aws_cloudwatch.IAlarm[]</code> | Alarms that stop the deployment: if one is in ALARM, the endpoint goes back to the previous revision and the deployment fails, so CloudFormation rolls the stack back. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.rollbackOn">rollbackOn</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions">WebFunctionRollbackOptions</a></code> | Alarms on the endpoint's own error rates, created by the endpoint in every region it serves from. |
 
 ---
 
@@ -2359,6 +2752,21 @@ Alarms that stop the deployment: if one is in ALARM, the endpoint goes back to t
 
 They're checked before traffic moves, during every step, and once the new revision has all traffic.
 Use alarms in any region (by ARN), including composite alarms.
+
+---
+
+##### `rollbackOn`<sup>Optional</sup> <a name="rollbackOn" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.rollbackOn"></a>
+
+```typescript
+public readonly rollbackOn: WebFunctionRollbackOptions;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions">WebFunctionRollbackOptions</a>
+- *Default:* no endpoint alarms
+
+Alarms on the endpoint's own error rates, created by the endpoint in every region it serves from.
+
+They stop the deployment like `alarms` (both can be used together).
 
 ---
 
@@ -2927,6 +3335,104 @@ public readonly weight: number;
 - *Type:* number
 
 The revision's share of the endpoint's traffic, as a fraction (like `lambda.Alias` `additionalVersions`). Must be a whole percentage from 0.01 to 0.99.
+
+---
+
+### WebFunctionRollbackOptions <a name="WebFunctionRollbackOptions" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions"></a>
+
+Alarms an endpoint creates on its own metrics to stop a canary or linear deployment.
+
+The endpoint creates one alarm per threshold in every region it serves from (metrics are published
+in the region that served the request, and an alarm can only watch metrics in its own region).
+Lambda Web Function metrics have no revision dimension, so the alarms watch the whole endpoint: while
+the new revision gets 10% of the traffic, its errors are about a tenth of the endpoint's.
+
+#### Initializer <a name="Initializer" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.Initializer"></a>
+
+```typescript
+import { WebFunctionRollbackOptions } from '@ashishpandeyone/cdk-lambda-web-function'
+
+const webFunctionRollbackOptions: WebFunctionRollbackOptions = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.clientErrorRate">clientErrorRate</a></code> | <code>number</code> | Roll back when more than this percent of the endpoint's requests get a 4XX response (0-100). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.evaluationPeriods">evaluationPeriods</a></code> | <code>number</code> | How many consecutive periods must breach a threshold before the deployment rolls back. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.minimumRequests">minimumRequests</a></code> | <code>number</code> | Periods with fewer requests than this don't count, so one failed request out of two doesn't roll back. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.period">period</a></code> | <code>aws-cdk-lib.Duration</code> | The period each rate is measured over (at least 1 minute, in whole minutes). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.serverErrorRate">serverErrorRate</a></code> | <code>number</code> | Roll back when more than this percent of the endpoint's requests get a 5XX response (0-100). |
+
+---
+
+##### `clientErrorRate`<sup>Optional</sup> <a name="clientErrorRate" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.clientErrorRate"></a>
+
+```typescript
+public readonly clientErrorRate: number;
+```
+
+- *Type:* number
+- *Default:* no client error alarm
+
+Roll back when more than this percent of the endpoint's requests get a 4XX response (0-100).
+
+Requests over `rateLimit` or `maxEnvironments` get 429, which counts here.
+
+---
+
+##### `evaluationPeriods`<sup>Optional</sup> <a name="evaluationPeriods" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.evaluationPeriods"></a>
+
+```typescript
+public readonly evaluationPeriods: number;
+```
+
+- *Type:* number
+- *Default:* 2
+
+How many consecutive periods must breach a threshold before the deployment rolls back.
+
+---
+
+##### `minimumRequests`<sup>Optional</sup> <a name="minimumRequests" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.minimumRequests"></a>
+
+```typescript
+public readonly minimumRequests: number;
+```
+
+- *Type:* number
+- *Default:* 10
+
+Periods with fewer requests than this don't count, so one failed request out of two doesn't roll back.
+
+---
+
+##### `period`<sup>Optional</sup> <a name="period" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.period"></a>
+
+```typescript
+public readonly period: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* Duration.minutes(1)
+
+The period each rate is measured over (at least 1 minute, in whole minutes).
+
+---
+
+##### `serverErrorRate`<sup>Optional</sup> <a name="serverErrorRate" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionRollbackOptions.property.serverErrorRate"></a>
+
+```typescript
+public readonly serverErrorRate: number;
+```
+
+- *Type:* number
+- *Default:* no server error alarm
+
+Roll back when more than this percent of the endpoint's requests get a 5XX response (0-100).
+
+5XX includes the platform's 503s while an endpoint scales up for a sudden burst, not only your application's errors.
 
 ---
 

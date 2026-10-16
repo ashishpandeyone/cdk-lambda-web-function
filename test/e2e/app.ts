@@ -4,7 +4,8 @@
  * kind (web | nodejs: NodejsWebFunction bundling test/fixtures/nodejs/server.ts), bundling (local | docker: forceDockerBundling),
  * appVersion (APP_VERSION, default: version), retention (revisionRetention), endpoints (many: adds Public and Global endpoints),
  * stable (revision ID for a Stable endpoint), split (revision ID that keeps 50% of the default endpoint),
- * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint).
+ * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint;
+ * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500).
  */
 import * as path from 'node:path';
 import { App, CfnOutput, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
@@ -30,6 +31,7 @@ const stack = new Stack(app, `WebFnE2E-${scenario}`, { env: { account: process.e
 
 // The test forces a rollback by publishing a data point to this metric during a canary.
 const progressive = ctx('deployment') === 'progressive';
+const rollbackOn = ctx('deployment') === 'rollbackOn';
 const forcedErrors = progressive ? new cloudwatch.Alarm(stack, 'ForcedErrors', {
   metric: new cloudwatch.Metric({ namespace: `WebFnE2E/${scenario}`, metricName: 'ForcedErrors', statistic: 'Maximum', period: Duration.minutes(1) }),
   threshold: 1,
@@ -42,9 +44,13 @@ const options: WebFunctionOptions = {
   endpoint: {
     endpointType,
     regions,
-    deployment: forcedErrors ? WebFunctionDeployment.canary({ percent: 20, bake: Duration.minutes(2), alarms: [forcedErrors] }) : undefined,
+    deployment: forcedErrors ? WebFunctionDeployment.canary({ percent: 20, bake: Duration.minutes(2), alarms: [forcedErrors] })
+      : rollbackOn ? WebFunctionDeployment.canary({
+        percent: 50, bake: Duration.minutes(8), rollbackOn: { serverErrorRate: 10, minimumRequests: 5, evaluationPeriods: 1 },
+      })
+        : undefined,
   },
-  environment: { APP_VERSION: ctx('appVersion', version)! },
+  environment: { APP_VERSION: ctx('appVersion', version)!, ...(ctx('fail') === 'true' ? { FAIL: 'true' } : {}) },
   revisionRetention: retention ? Number(retention) : undefined,
   logRetention: logs.RetentionDays.ONE_WEEK,
   logRemovalPolicy: RemovalPolicy.DESTROY,
@@ -110,3 +116,5 @@ if (forcedErrors) {
   out('PublicEndpointName', pub.endpointName);
   out('AlarmName', forcedErrors.alarmName);
 }
+
+if (rollbackOn) out('HomeRollbackAlarm', fn.endpoint.rollbackAlarms[0].alarmName);

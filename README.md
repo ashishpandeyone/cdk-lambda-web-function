@@ -250,18 +250,18 @@ fn.addEndpoint('Stable', { authType: WebFunctionAuthType.AWS_IAM, revision: prev
 By default an endpoint moves all its traffic to a new revision at once. With `deployment`, it moves in steps instead, watching CloudWatch alarms: if one goes into ALARM, the endpoint goes back to the revision it served before and the deployment fails, so CloudFormation rolls the stack back.
 
 ```ts
-// errorRate: a cloudwatch.IAlarm, for example on the share of 5xx responses
 const api = new WebFunction(this, 'Api', {
   runtime: lambda.Runtime.NODEJS_24_X,
   code: lambda.Code.fromAsset('dist'),
   authType: WebFunctionAuthType.AWS_IAM,
   endpoint: {
-    // 10% of the traffic for 10 minutes, then all of it.
-    deployment: WebFunctionDeployment.canary({ percent: 10, bake: Duration.minutes(10), alarms: [errorRate] }),
+    // 10% of the traffic for 10 minutes, then all of it; back if more than 2% of requests get a 5XX.
+    deployment: WebFunctionDeployment.canary({ percent: 10, bake: Duration.minutes(10), rollbackOn: { serverErrorRate: 2 } }),
   },
 });
 
-// 25% more every 5 minutes. Each endpoint has its own deployment.
+// 25% more every 5 minutes, watching an alarm of your own. Each endpoint has its own deployment.
+// errorRate: any cloudwatch.IAlarm, e.g. on a metric your application publishes.
 api.addEndpoint('Public', {
   authType: WebFunctionAuthType.NONE,
   deployment: WebFunctionDeployment.linear({ percent: 25, interval: Duration.minutes(5), alarms: [errorRate] }),
@@ -284,9 +284,51 @@ How it works:
 - A deployment can take up to an hour: CloudFormation waits for it before it updates the endpoint. Deployments of different endpoints run in parallel.
 - A canary or linear endpoint always moves to the current revision, so it can't also use `revision`, `additionalRevisions` or `routeTraffic()`. Use `allAtOnce()` to deploy a fix immediately, for example while an alarm is in ALARM.
 
-Lambda Web Function metrics have no revision dimension, so an alarm sees the whole endpoint: at 10%, a new revision's errors are a tenth of the endpoint's. Alarm on a rate, with a threshold low enough to notice that, or publish metrics from your application that carry its version. A bake should be longer than an alarm needs to fire (its period times its evaluation periods).
+#### Rollback alarms
+
+`rollbackOn` makes the endpoint create alarms on its own error rates, and the deployment watches them alongside any `alarms` you pass:
+
+| `rollbackOn` | Default | |
+|---|---|---|
+| `serverErrorRate` | none | roll back when more than this % of requests get a 5XX |
+| `clientErrorRate` | none | the same for 4XX (including 429s from `rateLimit` and `maxEnvironments`) |
+| `minimumRequests` | 10 | periods with fewer requests don't count, so one failed request out of two doesn't roll back |
+| `period`, `evaluationPeriods` | 1 minute, 2 | consecutive periods over the threshold before rolling back |
+
+- **One alarm per threshold in every region the endpoint serves from.** Metrics are published in the region that served the request, and an alarm can only watch metrics in its own region. The home region's alarm is a normal CloudFormation alarm; the others are created and deleted with the endpoint by a custom resource, and named `LambdaWeb-<function>-<endpoint>-5xx-rate` (or `-4xx-rate`). `endpoint.rollbackAlarms` lists them all, e.g. to add notifications to the home region's.
+- **The alarms see the whole endpoint.** Lambda Web Function metrics have no revision dimension, so at 10% a new revision's errors are about a tenth of the endpoint's: set the threshold low enough to notice that, or alarm on metrics your application publishes with its version.
+- **5XX includes the platform's 503s** while the endpoint scales up for a sudden burst, not only your application's errors.
+- **A step should outlast the alarm.** CloudWatch needs `period` × `evaluationPeriods`, plus a couple of minutes of delay, to fire; the construct warns when a canary's bake or a linear interval is shorter.
 
 The deployment runs in a few resources per stack, created on first use: two Lambda functions, a Step Functions state machine that calls them every 15 seconds, and a log group.
+
+## Metrics
+
+Endpoints and functions have helpers for their CloudWatch metrics (namespace `AWS/Lambda/Web`), like `lambda.Function`'s:
+
+```ts
+fn.endpoint.metricServerErrorRate().createAlarm(this, 'ErrorRate', { threshold: 1, evaluationPeriods: 3 });
+fn.endpoint.metricRequestThrottles().createAlarm(this, 'Throttled', { threshold: 10, evaluationPeriods: 3 });
+fn.metricConcurrentRequests().createAlarm(this, 'Saturated', { threshold: 60, evaluationPeriods: 3 });
+```
+
+| Endpoint | Metric |
+|---|---|
+| `metricRequests()` | `ExecutedRequests` (there's no separate 2XX count) |
+| `metricClientErrors()`, `metricServerErrors()` | `HTTPResponseStatusClass4XX`, `HTTPResponseStatusClass5XX` |
+| `metricClientErrorRate()`, `metricServerErrorRate()` | 4XX or 5XX as a % of requests (math expression) |
+| `metricActiveEnvironments()` | `EndpointActiveEnvironments`, to compare with `maxEnvironments` |
+| `metricRequestThrottles()`, `metricEnvironmentThrottles()` | 429s from `rateLimit` and from `maxEnvironments` |
+
+| Function | Metric |
+|---|---|
+| `metricConcurrentRequests()` | `EnvironmentConcurrentRequests` (maximum), to compare with `maxConcurrencyPerEnvironment` |
+| `metricMaxMemoryUsage()` | `EnvironmentMaxMemoryUsage` (maximum) |
+| `metricActiveTime()`, `metricCpuTime()`, `metricResponseBytes()` | `EnvironmentActiveTime`, `EnvironmentCPUTime`, `ResponseBytes` |
+
+- **Metrics stay in the region that served the request**; unlike logs, they aren't copied to the home region. Every helper takes `region`. Dashboards can show any region, but an alarm can only use metrics from its own stack's region.
+- 4XX, 5XX and the throttle metrics only exist once they're non-zero: alarm on them with `treatMissingData: NOT_BREACHING`. The rate helpers count missing errors as 0.
+- There's no latency metric. Publish one from your application (e.g. with the CloudWatch embedded metric format).
 
 ## Logs in every region
 
