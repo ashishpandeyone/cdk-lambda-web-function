@@ -3,14 +3,18 @@
  * Context: scenario, endpointType (HOME_REGION | MULTI_REGION | PER_REGION), regions (JSON), auth (AWS_IAM | NONE), version (v1 | v2),
  * kind (web | nodejs: NodejsWebFunction bundling test/fixtures/nodejs/server.ts), bundling (local | docker: forceDockerBundling),
  * appVersion (APP_VERSION, default: version), retention (revisionRetention), endpoints (many: adds Public and Global endpoints),
- * stable (revision ID for a Stable endpoint), split (revision ID that keeps 50% of the default endpoint).
+ * stable (revision ID for a Stable endpoint), split (revision ID that keeps 50% of the default endpoint),
+ * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint).
  */
 import * as path from 'node:path';
-import { App, CfnOutput, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { App, CfnOutput, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionEndpointType, WebFunctionRevision, type WebFunctionOptions } from '../../src';
+import {
+  NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionDeployment, WebFunctionEndpointType, WebFunctionRevision, type WebFunctionOptions,
+} from '../../src';
 
 export const HOME_REGION = 'ap-south-1';
 
@@ -24,9 +28,22 @@ const retention = ctx('retention');
 
 const stack = new Stack(app, `WebFnE2E-${scenario}`, { env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: HOME_REGION } });
 
+// The test forces a rollback by publishing a data point to this metric during a canary.
+const progressive = ctx('deployment') === 'progressive';
+const forcedErrors = progressive ? new cloudwatch.Alarm(stack, 'ForcedErrors', {
+  metric: new cloudwatch.Metric({ namespace: `WebFnE2E/${scenario}`, metricName: 'ForcedErrors', statistic: 'Maximum', period: Duration.minutes(1) }),
+  threshold: 1,
+  evaluationPeriods: 1,
+  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+}) : undefined;
+
 const options: WebFunctionOptions = {
   authType: WebFunctionAuthType[ctx('auth', 'AWS_IAM') as keyof typeof WebFunctionAuthType],
-  endpoint: { endpointType, regions },
+  endpoint: {
+    endpointType,
+    regions,
+    deployment: forcedErrors ? WebFunctionDeployment.canary({ percent: 20, bake: Duration.minutes(2), alarms: [forcedErrors] }) : undefined,
+  },
   environment: { APP_VERSION: ctx('appVersion', version)! },
   revisionRetention: retention ? Number(retention) : undefined,
   logRetention: logs.RetentionDays.ONE_WEEK,
@@ -82,4 +99,14 @@ if (ctx('endpoints') === 'many') {
     const previous = WebFunctionRevision.fromRevisionAttributes(stack, 'SplitRevision', { webFunction: fn, revisionId: split });
     fn.endpoint.routeTraffic(previous, [{ revision: fn.currentRevision, weight: 0.5 }]);
   }
+}
+
+if (forcedErrors) {
+  const pub = fn.addEndpoint('Public', {
+    authType: WebFunctionAuthType.NONE,
+    deployment: WebFunctionDeployment.linear({ percent: 50, interval: Duration.minutes(1) }),
+  });
+  out('PublicUrl', pub.url);
+  out('PublicEndpointName', pub.endpointName);
+  out('AlarmName', forcedErrors.alarmName);
 }

@@ -5,8 +5,10 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { WebFunctionAuthType, WebFunctionEndpointType } from './enums';
 import { EndpointLookup } from './private/endpoint-lookup';
+import { TrafficShift } from './private/traffic-shift';
 import { CFN_VALIDATE_UNKNOWN_TYPE, assertResourceName } from './private/validation';
 import type { IWebFunction } from './web-function';
+import type { WebFunctionDeployment } from './web-function-deployment';
 import { WebFunctionGrants } from './web-function-grants';
 import type { IWebFunctionRevision } from './web-function-revision';
 
@@ -84,6 +86,17 @@ export interface WebFunctionEndpointOptions {
    * @default - scales within the account's vCPU quota
    */
   readonly maxEnvironments?: number;
+
+  /**
+   * How the endpoint moves its traffic to a new revision: all at once, or in steps
+   * (`WebFunctionDeployment.canary()` or `linear()`) that watch CloudWatch alarms and move
+   * the traffic back when one goes into ALARM.
+   *
+   * A deployment in steps can't be combined with `revision`, `additionalRevisions` or `routeTraffic()`.
+   *
+   * @default WebFunctionDeployment.allAtOnce()
+   */
+  readonly deployment?: WebFunctionDeployment;
 }
 
 /**
@@ -177,6 +190,7 @@ export class WebFunctionEndpoint extends Construct {
   private readonly resource: lambda.CfnWebFunctionEndpoint;
   private weights: lambda.CfnWebFunctionEndpoint.RevisionWeightProperty[];
   private routed = false;
+  private readonly gradual: boolean;
   private lookup?: EndpointLookup;
 
   private constructor(scope: Construct, id: string, props: WebFunctionEndpointProps) {
@@ -219,6 +233,30 @@ export class WebFunctionEndpoint extends Construct {
     });
     Validations.of(resource).acknowledge(CFN_VALIDATE_UNKNOWN_TYPE);
     this.resource = resource;
+
+    this.gradual = props.deployment?._gradual ?? false;
+    if (props.deployment?._gradual) {
+      if (props.revision !== undefined || props.additionalRevisions !== undefined) {
+        throw new Error(`${this.node.path}: an endpoint with a ${props.deployment._kind} deployment always moves to the current revision; it can't also set revision or additionalRevisions`);
+      }
+      // Moves the traffic in steps before CloudFormation writes the endpoint, which then finds it already done.
+      const shift = new TrafficShift(this, 'Deployment', {
+        functionName: props.webFunction.webFunctionName,
+        functionArn: props.webFunction.webFunctionArn,
+        endpointName: this.endpointName,
+        revisionId: props.currentRevision.revisionId,
+        deployment: props.deployment,
+        endpointConfig: {
+          endpointType,
+          authType: props.authType,
+          description: props.description,
+          regions: extraRegions,
+          rateLimit: props.rateLimit,
+          maxEnvironments: props.maxEnvironments,
+        },
+      });
+      resource.node.addDependency(shift);
+    }
     if (props.revision !== undefined || props.additionalRevisions !== undefined) {
       this.routeTraffic(props.revision ?? props.currentRevision, props.additionalRevisions);
     }
@@ -263,6 +301,9 @@ export class WebFunctionEndpoint extends Construct {
    * Can be called once per endpoint, and not on one created with `revision` or `additionalRevisions`.
    */
   public routeTraffic(revision: IWebFunctionRevision, additionalRevisions?: WebFunctionRevisionWeight[]): void {
+    if (this.gradual) {
+      throw new Error(`${this.node.path}: the endpoint has a deployment in steps, which always moves it to the current revision; routeTraffic() can't be used with it`);
+    }
     if (this.routed) {
       throw new Error(`${this.node.path}: the endpoint's revisions are already set (revision, additionalRevisions or routeTraffic)`);
     }

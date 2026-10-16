@@ -1,16 +1,20 @@
 // Fixture for README examples: imports and a few declared values; the example replaces "/// here".
 import { CfnOutput, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionEndpointType, WebFunctionRevision } from '@ashishpandeyone/cdk-lambda-web-function';
+import {
+  NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionDeployment, WebFunctionEndpointType, WebFunctionRevision,
+} from '@ashishpandeyone/cdk-lambda-web-function';
 
 declare const fn: WebFunction;
 declare const table: dynamodb.Table;
 declare const consumerRole: iam.IRole;
+declare const errorRate: cloudwatch.IAlarm;
 
 class Fixture extends Stack {
   constructor(scope: Construct, id: string) {

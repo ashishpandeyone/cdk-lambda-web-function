@@ -46,6 +46,8 @@
     "@aws-cdk/integ-runner": "latest",
     "@aws-cdk/integ-tests-alpha": "latest",
     "@aws-crypto/sha256-js": "^5.2.0",
+    "@aws-sdk/client-cloudformation": "^3",
+    "@aws-sdk/client-cloudwatch": "^3",
     "@aws-sdk/client-cloudwatch-logs": "^3",
     "@aws-sdk/client-lambda-web": "^3.1151.0",
     "@aws-sdk/client-s3": "^3",

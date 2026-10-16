@@ -64,3 +64,34 @@ export interface RevisionCleanupProperties {
    */
   readonly RevisionIds: string[];
 }
+
+/**
+ * Moves an endpoint's traffic to a revision in steps, watching alarms (canary and linear deployments).
+ * Served by the deployment provider (`handlers/web-function-deployment`), not the shared provider: it can run for up to an hour.
+ */
+export const TRAFFIC_SHIFT_RESOURCE_TYPE = 'Custom::LambdaWebTrafficShift';
+
+export interface TrafficShiftProperties {
+  readonly FunctionArn: string;
+  readonly EndpointName: string;
+  /** The revision that ends up with all of the endpoint's traffic. */
+  readonly RevisionId: string;
+  /** The revision's share of traffic at each step, in percent, comma-separated; the last is 100. */
+  readonly Steps: string;
+  /** Seconds each step serves (counted from when its update started) before the next. */
+  readonly WaitSeconds: string;
+  /** Alarms (in any region) that stop the deployment and restore the previous weights. */
+  readonly AlarmArns?: string[];
+  /** Hash of the endpoint's other settings: any endpoint change re-checks its traffic before CloudFormation writes it. */
+  readonly EndpointConfig: string;
+}
+
+/** What `onEvent` hands to `isComplete` (the Provider framework passes it as `Data`). */
+export interface TrafficShiftState {
+  /** `none`: nothing to do; `shift`: moving in steps; `switch`: all at once, without alarms (stack rollback). */
+  readonly Action: 'none' | 'shift' | 'switch';
+  /** `shift`: the endpoint's weights before the deployment (JSON `[{revisionId, weight}]`), restored when an alarm fires. */
+  readonly PreviousWeights?: string;
+  /** `switch`: the weights being written (JSON `[{revisionId, weight}]`). */
+  readonly TargetWeights?: string;
+}

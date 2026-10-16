@@ -1410,6 +1410,7 @@ const addWebFunctionEndpointOptions: AddWebFunctionEndpointOptions = { ... }
 
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.deployment">deployment</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment">WebFunctionDeployment</a></code> | How the endpoint moves its traffic to a new revision: all at once, or in steps (`WebFunctionDeployment.canary()` or `linear()`) that watch CloudWatch alarms and move the traffic back when one goes into ALARM. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.description">description</a></code> | <code>string</code> | A description of the endpoint. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.endpointName">endpointName</a></code> | <code>string</code> | The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header. Names are unique per function. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.endpointType">endpointType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointType">WebFunctionEndpointType</a></code> | Where the endpoint serves traffic from. |
@@ -1419,6 +1420,21 @@ const addWebFunctionEndpointOptions: AddWebFunctionEndpointOptions = { ... }
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.authType">authType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAuthType">WebFunctionAuthType</a></code> | How callers of this endpoint are authenticated. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.additionalRevisions">additionalRevisions</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevisionWeight">WebFunctionRevisionWeight</a>[]</code> | A second revision and its share of the endpoint's traffic; |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.revision">revision</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunctionRevision">IWebFunctionRevision</a></code> | The revision the endpoint serves, e.g. an earlier one from `WebFunctionRevision.fromRevisionAttributes` to keep this endpoint on it while others move on. Same as calling `routeTraffic`. |
+
+---
+
+##### `deployment`<sup>Optional</sup> <a name="deployment" id="@ashishpandeyone/cdk-lambda-web-function.AddWebFunctionEndpointOptions.property.deployment"></a>
+
+```typescript
+public readonly deployment: WebFunctionDeployment;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment">WebFunctionDeployment</a>
+- *Default:* WebFunctionDeployment.allAtOnce()
+
+How the endpoint moves its traffic to a new revision: all at once, or in steps (`WebFunctionDeployment.canary()` or `linear()`) that watch CloudWatch alarms and move the traffic back when one goes into ALARM.
+
+A deployment in steps can't be combined with `revision`, `additionalRevisions` or `routeTraffic()`.
 
 ---
 
@@ -2084,6 +2100,70 @@ The Node.js runtime.
 
 ---
 
+### WebFunctionCanaryDeploymentOptions <a name="WebFunctionCanaryDeploymentOptions" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions"></a>
+
+Options for a canary deployment.
+
+#### Initializer <a name="Initializer" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.Initializer"></a>
+
+```typescript
+import { WebFunctionCanaryDeploymentOptions } from '@ashishpandeyone/cdk-lambda-web-function'
+
+const webFunctionCanaryDeploymentOptions: WebFunctionCanaryDeploymentOptions = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.bake">bake</a></code> | <code>aws-cdk-lib.Duration</code> | How long the new revision serves `percent` before it gets all traffic (1-45 minutes). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.percent">percent</a></code> | <code>number</code> | The share of traffic, in whole percent (1-99), that the new revision gets first. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.alarms">alarms</a></code> | <code>aws-cdk-lib.aws_cloudwatch.IAlarm[]</code> | Alarms that stop the deployment: if one is in ALARM, the endpoint goes back to the previous revision and the deployment fails, so CloudFormation rolls the stack back. |
+
+---
+
+##### `bake`<sup>Required</sup> <a name="bake" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.bake"></a>
+
+```typescript
+public readonly bake: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+
+How long the new revision serves `percent` before it gets all traffic (1-45 minutes).
+
+Make it longer than the time your alarms need to fire (period × evaluation periods).
+
+---
+
+##### `percent`<sup>Required</sup> <a name="percent" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.percent"></a>
+
+```typescript
+public readonly percent: number;
+```
+
+- *Type:* number
+
+The share of traffic, in whole percent (1-99), that the new revision gets first.
+
+---
+
+##### `alarms`<sup>Optional</sup> <a name="alarms" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions.property.alarms"></a>
+
+```typescript
+public readonly alarms: IAlarm[];
+```
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.IAlarm[]
+- *Default:* no alarms: traffic moves on a timer
+
+Alarms that stop the deployment: if one is in ALARM, the endpoint goes back to the previous revision and the deployment fails, so CloudFormation rolls the stack back.
+
+They're checked before traffic moves, during the bake, and once the new revision has all traffic.
+Use alarms in any region (by ARN), including composite alarms.
+
+---
+
 ### WebFunctionEndpointOptions <a name="WebFunctionEndpointOptions" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions"></a>
 
 Options for a Web Function's endpoint.
@@ -2100,12 +2180,28 @@ const webFunctionEndpointOptions: WebFunctionEndpointOptions = { ... }
 
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.deployment">deployment</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment">WebFunctionDeployment</a></code> | How the endpoint moves its traffic to a new revision: all at once, or in steps (`WebFunctionDeployment.canary()` or `linear()`) that watch CloudWatch alarms and move the traffic back when one goes into ALARM. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.description">description</a></code> | <code>string</code> | A description of the endpoint. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.endpointName">endpointName</a></code> | <code>string</code> | The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header. Names are unique per function. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.endpointType">endpointType</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointType">WebFunctionEndpointType</a></code> | Where the endpoint serves traffic from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.maxEnvironments">maxEnvironments</a></code> | <code>number</code> | The most execution environments the endpoint may use (2–10,000). Each one uses 2 vCPUs of the account's quota. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.rateLimit">rateLimit</a></code> | <code>number</code> | The most requests per second the endpoint accepts; |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.regions">regions</a></code> | <code>string[]</code> | Regions to serve from in addition to the home region (the stack's region). |
+
+---
+
+##### `deployment`<sup>Optional</sup> <a name="deployment" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions.property.deployment"></a>
+
+```typescript
+public readonly deployment: WebFunctionDeployment;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment">WebFunctionDeployment</a>
+- *Default:* WebFunctionDeployment.allAtOnce()
+
+How the endpoint moves its traffic to a new revision: all at once, or in steps (`WebFunctionDeployment.canary()` or `linear()`) that watch CloudWatch alarms and move the traffic back when one goes into ALARM.
+
+A deployment in steps can't be combined with `revision`, `additionalRevisions` or `routeTraffic()`.
 
 ---
 
@@ -2201,6 +2297,68 @@ Regions to serve from in addition to the home region (the stack's region).
 Required (at least one) for `MULTI_REGION` and `PER_REGION`; must be empty for `HOME_REGION`.
 
 Changing this creates a new endpoint with a new URL.
+
+---
+
+### WebFunctionLinearDeploymentOptions <a name="WebFunctionLinearDeploymentOptions" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions"></a>
+
+Options for a linear deployment.
+
+#### Initializer <a name="Initializer" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.Initializer"></a>
+
+```typescript
+import { WebFunctionLinearDeploymentOptions } from '@ashishpandeyone/cdk-lambda-web-function'
+
+const webFunctionLinearDeploymentOptions: WebFunctionLinearDeploymentOptions = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.interval">interval</a></code> | <code>aws-cdk-lib.Duration</code> | How long each step serves before the next one (at least 1 minute, and at most 45 minutes in total). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.percent">percent</a></code> | <code>number</code> | The share of traffic, in whole percent (5-50), that moves to the new revision at each step. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.alarms">alarms</a></code> | <code>aws-cdk-lib.aws_cloudwatch.IAlarm[]</code> | Alarms that stop the deployment: if one is in ALARM, the endpoint goes back to the previous revision and the deployment fails, so CloudFormation rolls the stack back. |
+
+---
+
+##### `interval`<sup>Required</sup> <a name="interval" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.interval"></a>
+
+```typescript
+public readonly interval: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+
+How long each step serves before the next one (at least 1 minute, and at most 45 minutes in total).
+
+---
+
+##### `percent`<sup>Required</sup> <a name="percent" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.percent"></a>
+
+```typescript
+public readonly percent: number;
+```
+
+- *Type:* number
+
+The share of traffic, in whole percent (5-50), that moves to the new revision at each step.
+
+---
+
+##### `alarms`<sup>Optional</sup> <a name="alarms" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions.property.alarms"></a>
+
+```typescript
+public readonly alarms: IAlarm[];
+```
+
+- *Type:* aws-cdk-lib.aws_cloudwatch.IAlarm[]
+- *Default:* no alarms: traffic moves on a timer
+
+Alarms that stop the deployment: if one is in ALARM, the endpoint goes back to the previous revision and the deployment fails, so CloudFormation rolls the stack back.
+
+They're checked before traffic moves, during every step, and once the new revision has all traffic.
+Use alarms in any region (by ARN), including composite alarms.
 
 ---
 
@@ -2773,6 +2931,65 @@ The revision's share of the endpoint's traffic, as a fraction (like `lambda.Alia
 ---
 
 ## Classes <a name="Classes" id="Classes"></a>
+
+### WebFunctionDeployment <a name="WebFunctionDeployment" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment"></a>
+
+How an endpoint moves its traffic to a new revision.
+
+
+#### Static Functions <a name="Static Functions" id="Static Functions"></a>
+
+| **Name** | **Description** |
+| --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment.allAtOnce">allAtOnce</a></code> | All traffic moves to the new revision at once, as soon as it's ready (the default). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment.canary">canary</a></code> | The new revision first gets `percent` of the traffic for `bake`, then all of it. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment.linear">linear</a></code> | The new revision gets `percent` more of the traffic every `interval` until it has all of it. |
+
+---
+
+##### `allAtOnce` <a name="allAtOnce" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment.allAtOnce"></a>
+
+```typescript
+import { WebFunctionDeployment } from '@ashishpandeyone/cdk-lambda-web-function'
+
+WebFunctionDeployment.allAtOnce()
+```
+
+All traffic moves to the new revision at once, as soon as it's ready (the default).
+
+##### `canary` <a name="canary" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment.canary"></a>
+
+```typescript
+import { WebFunctionDeployment } from '@ashishpandeyone/cdk-lambda-web-function'
+
+WebFunctionDeployment.canary(options: WebFunctionCanaryDeploymentOptions)
+```
+
+The new revision first gets `percent` of the traffic for `bake`, then all of it.
+
+###### `options`<sup>Required</sup> <a name="options" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment.canary.parameter.options"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionCanaryDeploymentOptions">WebFunctionCanaryDeploymentOptions</a>
+
+---
+
+##### `linear` <a name="linear" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment.linear"></a>
+
+```typescript
+import { WebFunctionDeployment } from '@ashishpandeyone/cdk-lambda-web-function'
+
+WebFunctionDeployment.linear(options: WebFunctionLinearDeploymentOptions)
+```
+
+The new revision gets `percent` more of the traffic every `interval` until it has all of it.
+
+###### `options`<sup>Required</sup> <a name="options" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionDeployment.linear.parameter.options"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionLinearDeploymentOptions">WebFunctionLinearDeploymentOptions</a>
+
+---
+
+
 
 ### WebFunctionGrants <a name="WebFunctionGrants" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants"></a>
 

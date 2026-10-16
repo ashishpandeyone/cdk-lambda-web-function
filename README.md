@@ -245,6 +245,49 @@ fn.addEndpoint('Stable', { authType: WebFunctionAuthType.AWS_IAM, revision: prev
 - To promote, remove `routeTraffic` (or `revision`) and deploy: the endpoint serves the current revision again.
 - Lambda Web Function metrics have no revision dimension. To compare a split's revisions, log a version you control (for example an environment variable) from your application.
 
+### Canary and linear deployments
+
+By default an endpoint moves all its traffic to a new revision at once. With `deployment`, it moves in steps instead, watching CloudWatch alarms: if one goes into ALARM, the endpoint goes back to the revision it served before and the deployment fails, so CloudFormation rolls the stack back.
+
+```ts
+// errorRate: a cloudwatch.IAlarm, for example on the share of 5xx responses
+const api = new WebFunction(this, 'Api', {
+  runtime: lambda.Runtime.NODEJS_24_X,
+  code: lambda.Code.fromAsset('dist'),
+  authType: WebFunctionAuthType.AWS_IAM,
+  endpoint: {
+    // 10% of the traffic for 10 minutes, then all of it.
+    deployment: WebFunctionDeployment.canary({ percent: 10, bake: Duration.minutes(10), alarms: [errorRate] }),
+  },
+});
+
+// 25% more every 5 minutes. Each endpoint has its own deployment.
+api.addEndpoint('Public', {
+  authType: WebFunctionAuthType.NONE,
+  deployment: WebFunctionDeployment.linear({ percent: 25, interval: Duration.minutes(5), alarms: [errorRate] }),
+});
+```
+
+| | Steps | Limits |
+|---|---|---|
+| `allAtOnce()` (default) | 100% | |
+| `canary({ percent, bake })` | `percent`, then 100% after `bake` | `percent` 1–99, `bake` 1–45 minutes |
+| `linear({ percent, interval })` | `percent` more every `interval` | `percent` 5–50, `interval` from 1 minute, at most 45 minutes in all |
+
+How it works:
+
+- Each deployment that creates a revision (code or configuration) moves the traffic from the revision the endpoint serves at that moment, which is also what it goes back to. If someone switched the endpoint outside CloudFormation, the deployment starts from there.
+- Each step waits until every region of a `MULTI_REGION` or `PER_REGION` endpoint has applied it (usually about 15 seconds), and if a region fails to update, the endpoint goes back as for an alarm. The bake or interval counts from the start of the step.
+- Alarms are checked before the first step (an alarm already in ALARM stops the deployment before any traffic moves), throughout every step, and once the new revision has all the traffic. They can be in any region, and composite alarms work. `INSUFFICIENT_DATA` doesn't stop a deployment.
+- A rollback of the stack, for any reason, moves the traffic back at once, without waiting or checking alarms.
+- A stack's first deployment, and a new endpoint (including one renamed by a region change), serve the revision at once: there's nothing to move from.
+- A deployment can take up to an hour: CloudFormation waits for it before it updates the endpoint. Deployments of different endpoints run in parallel.
+- A canary or linear endpoint always moves to the current revision, so it can't also use `revision`, `additionalRevisions` or `routeTraffic()`. Use `allAtOnce()` to deploy a fix immediately, for example while an alarm is in ALARM.
+
+Lambda Web Function metrics have no revision dimension, so an alarm sees the whole endpoint: at 10%, a new revision's errors are a tenth of the endpoint's. Alarm on a rate, with a threshold low enough to notice that, or publish metrics from your application that carry its version. A bake should be longer than an alarm needs to fire (its period times its evaluation periods).
+
+The deployment runs in a few resources per stack, created on first use: two Lambda functions, a Step Functions state machine that calls them every 15 seconds, and a log group.
+
 ## Logs in every region
 
 Web Functions log in two tiers:
@@ -279,7 +322,6 @@ new WebFunction(this, 'Api', {
 
 ## Limitations
 
-- Traffic moves between revisions only as declared in code: no gradual (canary or linear) deployments with automatic rollback yet.
 - Not yet supported: importing existing functions, VPC access (network connectors), resource-policy permissions, KMS encryption, metrics helpers, tracing, and a CloudFront origin.
 - `cdk deploy --hotswap` and `cdk watch` don't support Web Functions.
 - Quotas: 10 endpoints and about 50 revisions per function (Lambda cleans up older revisions automatically), and 10,000 requests per second per endpoint. Per account and region: 100,000 requests per second and 2,000 Arm64 vCPUs (each execution environment uses 2). The account quotas are adjustable, and new accounts start lower. See [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).

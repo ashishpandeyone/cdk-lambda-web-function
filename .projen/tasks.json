@@ -79,10 +79,13 @@
     },
     "bundle:handlers": {
       "name": "bundle:handlers",
-      "description": "Bundle the custom resource handler into assets/",
+      "description": "Bundle the custom resource handlers into assets/",
       "steps": [
         {
           "exec": "esbuild handlers/web-function-provider/index.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=assets/web-function-provider/index.js"
+        },
+        {
+          "exec": "esbuild handlers/web-function-deployment/index.ts --bundle --platform=node --target=node24 --format=cjs --minify --outfile=assets/web-function-deployment/index.js"
         }
       ]
     },
@@ -477,7 +480,9 @@
             "npm",
             "update",
             "@aws-crypto/sha256-js",
+            "@aws-sdk/client-cloudformation",
             "@aws-sdk/client-cloudwatch-logs",
+            "@aws-sdk/client-cloudwatch",
             "@aws-sdk/client-lambda-web",
             "@aws-sdk/client-s3",
             "@aws-sdk/client-sts",
