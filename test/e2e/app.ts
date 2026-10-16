@@ -5,7 +5,8 @@
  * appVersion (APP_VERSION, default: version), retention (revisionRetention), endpoints (many: adds Public and Global endpoints),
  * stable (revision ID for a Stable endpoint), split (revision ID that keeps 50% of the default endpoint),
  * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint;
- * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500).
+ * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500),
+ * permissions (on: a caller allowed by the resource policy alone, plus CloudFront statements; none: the caller role without them).
  */
 import * as path from 'node:path';
 import { App, CfnOutput, CfnResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
@@ -122,6 +123,23 @@ if (forcedErrors) {
 }
 
 if (rollbackOn) out('HomeRollbackAlarm', fn.endpoint.rollbackAlarms[0].alarmName);
+
+// A caller with no IAM policy of its own, allowed by the function's resource policy only (same account).
+const permissions = ctx('permissions');
+if (permissions) {
+  const policyCaller = new iam.Role(stack, 'PolicyCaller', { assumedBy: new iam.AccountRootPrincipal() });
+  out('PolicyCallerRoleArn', policyCaller.roleArn);
+  if (permissions === 'on') {
+    fn.addPermission('E2eCaller', { principal: new iam.ArnPrincipal(policyCaller.roleArn) });
+    fn.addPermission('Cdn', {
+      principal: new iam.ServicePrincipal('cloudfront.amazonaws.com'),
+      endpoint: fn.endpoint,
+      sourceArn: `arn:aws:cloudfront::${stack.account}:distribution/*`,
+    });
+    // A grant to a service principal: a resource-policy statement without a Sid.
+    fn.grantInvoke(new iam.ServicePrincipal('cloudfront.amazonaws.com').withConditions({ StringEquals: { 'aws:SourceAccount': stack.account } }));
+  }
+}
 
 // failDeploy=true: a resource that fails about a minute after the function, forcing the update to roll back.
 if (ctx('failDeploy') === 'true') {

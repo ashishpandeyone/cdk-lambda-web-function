@@ -1,4 +1,5 @@
 import * as iam from 'aws-cdk-lib/aws-iam';
+import type { IWebFunction } from './web-function';
 import type { WebFunctionEndpoint } from './web-function-endpoint';
 
 /**
@@ -8,8 +9,8 @@ export class WebFunctionGrants {
   /**
    * @internal
    */
-  public static _forEndpoint(endpoint: WebFunctionEndpoint): WebFunctionGrants {
-    return new WebFunctionGrants(() => [endpoint.endpointArn]);
+  public static _forEndpoint(endpoint: WebFunctionEndpoint, webFunction: IWebFunction): WebFunctionGrants {
+    return new WebFunctionGrants(() => [endpoint.endpointArn], webFunction);
   }
 
   /**
@@ -21,19 +22,21 @@ export class WebFunctionGrants {
     return new WebFunctionGrants(() => endpointArns);
   }
 
-  private constructor(private readonly endpointArns: () => string[]) {}
+  private constructor(private readonly endpointArns: () => string[], private readonly webFunction?: IWebFunction) {}
 
   /**
    * Allows `grantee` to call the endpoint (`lambda:InvokeWebFunctionEndpoint`).
    *
    * The grant is on the endpoint's home-region ARN, which IAM evaluates for every region the
    * endpoint serves from, including a MULTI_REGION global URL.
+   *
+   * A grantee in the function's account gets an IAM policy statement. Another account or an AWS service also gets
+   * a statement in the function's resource policy (not for an imported function's endpoints).
    */
   public invoke(grantee: iam.IGrantable): iam.Grant {
-    return iam.Grant.addToPrincipal({
-      grantee,
-      actions: ['lambda:InvokeWebFunctionEndpoint'],
-      resourceArns: this.endpointArns(),
-    });
+    const options = { grantee, actions: ['lambda:InvokeWebFunctionEndpoint'], resourceArns: this.endpointArns() };
+    return this.webFunction
+      ? iam.Grant.addToPrincipalOrResource({ ...options, resource: this.webFunction })
+      : iam.Grant.addToPrincipal(options);
   }
 }
