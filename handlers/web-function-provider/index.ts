@@ -28,6 +28,12 @@ export async function handler(event: CloudFormationCustomResourceEvent): Promise
     case CODE_BUCKET_CLEANUP_RESOURCE_TYPE:
       return handleCodeBucketCleanup(event);
     default:
+      // A rollback to an earlier version of this handler deletes resource types that only a newer version created.
+      // Nothing was created for them here, so the delete succeeds instead of failing (and being retried) for minutes.
+      if (event.RequestType === 'Delete') {
+        console.log(JSON.stringify({ msg: 'delete of an unknown resource type ignored', resourceType: event.ResourceType }));
+        return { PhysicalResourceId: event.PhysicalResourceId };
+      }
       throw new Error(`Unsupported resource type: ${event.ResourceType}`);
   }
 }

@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import { App, DockerImage, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -76,8 +77,10 @@ describe('code', () => {
     });
     // Emptying the bucket on delete: every version of every object.
     expect(role.Properties.Policies[0].PolicyDocument.Statement).toContainEqual({
-      Effect: 'Allow', Action: 's3:ListBucketVersions', Resource: { 'Fn::GetAtt': [expect.stringMatching(/^LambdaWebFunctionCodeBucket/), 'Arn'] },
+      Effect: 'Allow', Action: ['s3:ListBucketVersions', 's3:GetBucketTagging'], Resource: { 'Fn::GetAtt': [expect.stringMatching(/^LambdaWebFunctionCodeBucket/), 'Arn'] },
     });
+    // Only a tagged bucket is emptied, so a rolled-back upgrade (which reverts the tags first) keeps its code.
+    t.hasResourceProperties('AWS::S3::Bucket', { Tags: Match.arrayWith([{ Key: 'cdk-lambda-web:empty-on-delete', Value: 'true' }]) });
     expect(role.Properties.Policies[0].PolicyDocument.Statement).toContainEqual({
       Effect: 'Allow',
       Action: ['s3:DeleteObject', 's3:DeleteObjectVersion'],
@@ -182,4 +185,12 @@ describe('docker bundling', () => {
     expect(dockerCommand(props({ tsconfig: path.join(root, 'tsconfig.dev.json') }))).toMatch(/--tsconfig=\/asset-input\/tsconfig\.dev\.json /);
     expect(dockerCommand(props({ sourceMap: false, format: OutputFormat.CJS }))).toMatch(/--outfile=\/asset-output\/index\.js --minify$/);
   });
+});
+
+test('apps with pre-created roles (iam.Role.customizeRoles) still synthesize', () => {
+  const app = new App();
+  const stack = new Stack(app, 'Stack', { env: { account: '111111111111', region: 'ap-south-1' } });
+  iam.Role.customizeRoles(stack);
+  new WebFunctionCode(stack, 'Code', lambda.Code.fromAsset(fixture));
+  expect(() => app.synth()).not.toThrow();
 });

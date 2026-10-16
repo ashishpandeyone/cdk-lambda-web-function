@@ -170,6 +170,8 @@ export interface IWebFunction extends IResource, lambda.IWebFunctionRef {
   /**
    * Allows `grantee` to call the function's endpoint (`lambda:InvokeWebFunctionEndpoint`): the default endpoint
    * of a `WebFunction`; for an imported function, the endpoint named in its attributes, or every endpoint.
+   *
+   * This adds to the grantee's IAM policy. For a function in another account, its resource policy must also allow the grantee.
    * [disable-awslint:no-grants]
    */
   grantInvoke(grantee: iam.IGrantable): iam.Grant;
@@ -201,7 +203,7 @@ export interface IWebFunction extends IResource, lambda.IWebFunctionRef {
 export interface WebFunctionAttributes {
   /**
    * The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another
-   * account or region.
+   * region or account; across accounts, `grantInvoke` also needs the function's resource policy to allow the caller.
    *
    * @default - built from `webFunctionName`, in this stack's account and region
    */
@@ -311,7 +313,7 @@ export abstract class WebFunctionBase extends Resource implements IWebFunction {
  */
 export class WebFunction extends WebFunctionBase implements iam.IGrantable {
   /**
-   * Imports an existing Web Function by its ARN (in any account or region).
+   * Imports an existing Web Function by its ARN (in any region or account).
    */
   public static fromWebFunctionArn(scope: Construct, id: string, webFunctionArn: string): IWebFunction {
     return WebFunction.fromWebFunctionAttributes(scope, id, { webFunctionArn });

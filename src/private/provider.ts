@@ -40,7 +40,8 @@ export function webFunctionProvider(scope: Construct): CustomResourceProvider {
   handler.addDependency(logGroup.node.defaultChild as CfnResource);
   // Only write to that group. The default AWSLambdaBasicExecutionRole allows logs:CreateLogGroup, so log lines
   // Lambda delivers late, after CloudFormation deleted the group with the stack, would re-create it without retention.
-  (provider.node.findChild('Role') as CfnResource).addPropertyDeletionOverride('ManagedPolicyArns');
+  // No Role child when the app uses pre-created roles (iam.Role.customizeRoles): that role is managed outside CDK.
+  (provider.node.tryFindChild('Role') as CfnResource | undefined)?.addPropertyDeletionOverride('ManagedPolicyArns');
   grantToProvider(provider, { Action: ['logs:CreateLogStream', 'logs:PutLogEvents'], Resource: logGroup.logGroupArn });
   return provider;
 }

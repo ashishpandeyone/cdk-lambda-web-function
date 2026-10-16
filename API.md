@@ -314,7 +314,7 @@ Adds a statement to the execution role's policy.
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.isConstruct">isConstruct</a></code> | Checks if `x` is a construct. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.isOwnedResource">isOwnedResource</a></code> | Returns true if the construct was created by CDK, and false otherwise. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.isResource">isResource</a></code> | Check whether the given construct is a Resource. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.fromWebFunctionArn">fromWebFunctionArn</a></code> | Imports an existing Web Function by its ARN (in any account or region). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.fromWebFunctionArn">fromWebFunctionArn</a></code> | Imports an existing Web Function by its ARN (in any region or account). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.fromWebFunctionAttributes">fromWebFunctionAttributes</a></code> | Imports an existing Web Function: give its ARN or its name, and optionally the endpoint `grantInvoke` allows. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.fromWebFunctionName">fromWebFunctionName</a></code> | Imports an existing Web Function in this stack's account and region by its name. |
 
@@ -392,7 +392,7 @@ import { NodejsWebFunction } from '@ashishpandeyone/cdk-lambda-web-function'
 NodejsWebFunction.fromWebFunctionArn(scope: Construct, id: string, webFunctionArn: string)
 ```
 
-Imports an existing Web Function by its ARN (in any account or region).
+Imports an existing Web Function by its ARN (in any region or account).
 
 ###### `scope`<sup>Required</sup> <a name="scope" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.fromWebFunctionArn.parameter.scope"></a>
 
@@ -976,7 +976,7 @@ Adds a statement to the execution role's policy.
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.isConstruct">isConstruct</a></code> | Checks if `x` is a construct. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.isOwnedResource">isOwnedResource</a></code> | Returns true if the construct was created by CDK, and false otherwise. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.isResource">isResource</a></code> | Check whether the given construct is a Resource. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.fromWebFunctionArn">fromWebFunctionArn</a></code> | Imports an existing Web Function by its ARN (in any account or region). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.fromWebFunctionArn">fromWebFunctionArn</a></code> | Imports an existing Web Function by its ARN (in any region or account). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.fromWebFunctionAttributes">fromWebFunctionAttributes</a></code> | Imports an existing Web Function: give its ARN or its name, and optionally the endpoint `grantInvoke` allows. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.fromWebFunctionName">fromWebFunctionName</a></code> | Imports an existing Web Function in this stack's account and region by its name. |
 
@@ -1054,7 +1054,7 @@ import { WebFunction } from '@ashishpandeyone/cdk-lambda-web-function'
 WebFunction.fromWebFunctionArn(scope: Construct, id: string, webFunctionArn: string)
 ```
 
-Imports an existing Web Function by its ARN (in any account or region).
+Imports an existing Web Function by its ARN (in any region or account).
 
 ###### `scope`<sup>Required</sup> <a name="scope" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.fromWebFunctionArn.parameter.scope"></a>
 
@@ -3079,7 +3079,7 @@ const webFunctionAttributes: WebFunctionAttributes = { ... }
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAttributes.property.endpointName">endpointName</a></code> | <code>string</code> | The endpoint `grantInvoke` allows calling. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAttributes.property.webFunctionArn">webFunctionArn</a></code> | <code>string</code> | The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another account or region. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAttributes.property.webFunctionArn">webFunctionArn</a></code> | <code>string</code> | The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another region or account; across accounts, `grantInvoke` also needs the function's resource policy to allow the caller. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAttributes.property.webFunctionName">webFunctionName</a></code> | <code>string</code> | The function's name. |
 
 ---
@@ -3106,7 +3106,7 @@ public readonly webFunctionArn: string;
 - *Type:* string
 - *Default:* built from `webFunctionName`, in this stack's account and region
 
-The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another account or region.
+The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another region or account; across accounts, `grantInvoke` also needs the function's resource policy to allow the caller.
 
 ---
 
@@ -4211,6 +4211,8 @@ public grantInvoke(grantee: IGrantable): Grant
 Allows `grantee` to call the function's endpoint (`lambda:InvokeWebFunctionEndpoint`): the default endpoint of a `WebFunction`;
 
 for an imported function, the endpoint named in its attributes, or every endpoint.
+
+This adds to the grantee's IAM policy. For a function in another account, its resource policy must also allow the grantee.
 [disable-awslint:no-grants]
 
 ###### `grantee`<sup>Required</sup> <a name="grantee" id="@ashishpandeyone/cdk-lambda-web-function.IWebFunction.grantInvoke.parameter.grantee"></a>

@@ -158,7 +158,7 @@ const response = await fetch(`https://${host}/`, { headers: signed.headers });
 
 ### Functions defined elsewhere
 
-Import a Web Function from another stack, app or account to grant access to it, read its metrics, or reference its revisions:
+Import a Web Function defined in another stack or app to grant access to it, read its metrics, or reference its revisions:
 
 ```ts
 const orders = WebFunction.fromWebFunctionArn(this, 'Orders', 'arn:aws:lambda:us-east-1:111122223333:web-function/orders');
@@ -172,6 +172,8 @@ live.metricConcurrentRequests().createAlarm(this, 'Busy', { threshold: 60, evalu
 ```
 
 An imported function's metrics default to its own region. Its endpoints, revisions and log groups stay with the stack that defines it.
+
+`grantInvoke` adds to the caller's IAM policy, which is all a caller in the function's account needs. A caller in another account also needs the function's resource policy to allow it, which this library doesn't manage yet.
 
 ## Configuration
 

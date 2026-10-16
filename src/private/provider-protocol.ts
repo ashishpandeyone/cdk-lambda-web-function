@@ -118,6 +118,12 @@ export interface RegionalAlarmProperties {
 /** Empties the stack's code bucket (every object version and delete marker) when the stack deletes it. */
 export const CODE_BUCKET_CLEANUP_RESOURCE_TYPE = 'Custom::LambdaWebCodeBucketCleanup';
 
+/**
+ * Tag on the code bucket that lets the cleanup empty it. A rollback reverts the bucket's tags before it deletes
+ * resources the failed update created, so a cleanup resource added to an existing bucket never empties it on rollback.
+ */
+export const EMPTY_ON_DELETE_TAG = { key: 'cdk-lambda-web:empty-on-delete', value: 'true' };
+
 export interface CodeBucketCleanupProperties {
   readonly BucketName: string;
 }

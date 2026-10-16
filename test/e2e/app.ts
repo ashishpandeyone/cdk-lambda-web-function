@@ -8,7 +8,7 @@
  * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500).
  */
 import * as path from 'node:path';
-import { App, CfnOutput, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { App, CfnOutput, CfnResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -122,3 +122,10 @@ if (forcedErrors) {
 }
 
 if (rollbackOn) out('HomeRollbackAlarm', fn.endpoint.rollbackAlarms[0].alarmName);
+
+// failDeploy=true: a resource that fails about a minute after the function, forcing the update to roll back.
+if (ctx('failDeploy') === 'true') {
+  const handle = new CfnResource(stack, 'FailHandle', { type: 'AWS::CloudFormation::WaitConditionHandle' });
+  const wait = new CfnResource(stack, 'Fail', { type: 'AWS::CloudFormation::WaitCondition', properties: { Handle: handle.ref, Timeout: '1', Count: 1 } });
+  wait.node.addDependency(fn);
+}
