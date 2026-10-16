@@ -15,9 +15,9 @@ import { promisify } from 'node:util';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { CloudWatchClient, DescribeAlarmsCommand, PutMetricDataCommand, SetAlarmStateCommand } from '@aws-sdk/client-cloudwatch';
 import { CloudWatchLogsClient, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
-import { GetWebFunctionEndpointCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
+import { GetResourcePolicyCommand, GetWebFunctionEndpointCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
-import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
+import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { SignatureV4a } from '@smithy/signature-v4a';
 
@@ -49,6 +49,7 @@ interface Context {
   split?: string;
   deployment?: string;
   fail?: boolean;
+  permissions?: string;
 }
 
 class Scenario {
@@ -100,6 +101,7 @@ class Scenario {
         split: ctx.split,
         deployment: ctx.deployment,
         fail: ctx.fail,
+        permissions: ctx.permissions,
       })
         .filter(([, v]) => v !== undefined).flatMap(([k, v]) => ['-c', `${k}=${v}`])];
   }
@@ -608,6 +610,53 @@ async function scenarioRollbackOn(): Promise<Scenario> {
   return s;
 }
 
+async function resourcePolicySids(functionArn: string): Promise<string[] | undefined> {
+  try {
+    const r = await web.send(new GetResourcePolicyCommand({ resourceArn: functionArn }));
+    return JSON.parse(r.policy!).Statement.map((s: { Sid?: string }) => s.Sid ?? '(none)');
+  } catch (e) {
+    if ((e as Error).name === 'ResourceNotFoundException') return undefined;
+    throw e;
+  }
+}
+
+async function scenarioResourcePolicy(): Promise<Scenario> {
+  const s = new Scenario('P', 'resource policy: addPermission, service grants, removal');
+  let ctx: Context = { endpointType: 'PER_REGION', regions: ['us-east-1'], permissions: 'on' };
+  let out: Outputs | undefined;
+  try {
+    out = await s.deploy(ctx);
+    const functionArn = `arn:aws:lambda:${HOME}:${(await sts.send(new GetCallerIdentityCommand({}))).Account}:web-function/${out.FunctionName}`;
+    const sids = await resourcePolicySids(functionArn);
+    s.check('one resource policy with every statement (Sid from addPermission; none from a grant)',
+      JSON.stringify(sids) === JSON.stringify(['E2eCaller', 'Cdn', '(none)']), `sids=${JSON.stringify(sids)}`);
+    const caller = await assume(out.PolicyCallerRoleArn);
+    const outsider = await assume(out.OutsiderRoleArn);
+    for (const region of ['ap-south-1', 'us-east-1']) {
+      const url = out[`Url${region.replace(/-/g, '')}`];
+      const allowed = await callUntil(url, caller, 200, 120_000);
+      s.check(`${region}: role allowed only by the resource policy is served`, allowed.status === 200, `status=${allowed.status}`);
+      const denied = await call(url, outsider);
+      s.check(`${region}: role in neither policy is denied`, denied.status === 403, `status=${denied.status}`);
+    }
+
+    // Removing every statement deletes the policy, and the caller loses access in every region.
+    ctx = { ...ctx, permissions: 'none' };
+    out = await s.deploy(ctx);
+    s.check('no statements left: resource policy deleted', (await resourcePolicySids(functionArn)) === undefined);
+    for (const region of ['ap-south-1', 'us-east-1']) {
+      const revoked = await callUntil(out[`Url${region.replace(/-/g, '')}`], caller, 403, 120_000);
+      s.check(`${region}: caller denied once the policy is gone`, revoked.status === 403, `status=${revoked.status}`);
+    }
+  } catch (e) {
+    s.check('scenario ran to completion', false, (e as Error).message);
+  } finally {
+    await s.destroy(ctx).catch((e) => s.check('destroy', false, (e as Error).message));
+    if (out) await checkNothingLeft(s, out);
+  }
+  return s;
+}
+
 async function main() {
   const all: Record<string, () => Promise<Scenario>> = {
     A: scenarioPerRegion,
@@ -618,6 +667,7 @@ async function main() {
     F: scenarioEndpointsAndRevisions,
     G: scenarioProgressive,
     H: scenarioRollbackOn,
+    P: scenarioResourcePolicy,
   };
   const selected = process.argv.slice(2).filter((a) => all[a]);
   const run = selected.length > 0 ? selected : Object.keys(all);

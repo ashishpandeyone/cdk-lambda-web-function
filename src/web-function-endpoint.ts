@@ -287,7 +287,7 @@ export class WebFunctionEndpoint extends Construct {
     this.endpointArn = resource.attrEndpointArn;
     this.domainName = resource.attrDomainName;
     this.url = `https://${resource.attrDomainName}`;
-    this.grants = WebFunctionGrants._forEndpoint(this);
+    this.grants = WebFunctionGrants._forEndpoint(this, props.webFunction);
   }
 
   /**

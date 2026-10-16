@@ -165,6 +165,32 @@ const signed = await signer.sign(
 const response = await fetch(`https://${host}/`, { headers: signed.headers });
 ```
 
+### Other accounts and AWS services
+
+A caller in another account needs permission twice: in its own IAM policy, and in the function's **resource policy**. `grantInvoke` handles the function's side: a role in the function's account only gets an IAM policy statement, while a principal in another account or an AWS service also gets a statement in the resource policy.
+
+```ts
+fn.grantInvoke(iam.Role.fromRoleArn(this, 'Partner', 'arn:aws:iam::444455556666:role/caller'));
+```
+
+For principals you can't grant to (a whole account, an organization, an AWS service with conditions), use `addPermission`. The `id` becomes the statement's `Sid`:
+
+```ts
+fn.addPermission('PartnerAccount', { principal: new iam.AccountPrincipal('444455556666') });
+fn.addPermission('MyOrg', { principal: new iam.OrganizationPrincipal('o-a1b2c3d4e5'), endpoint: fn.endpoint });
+fn.addPermission('Cdn', {
+  principal: new iam.ServicePrincipal('cloudfront.amazonaws.com'),
+  sourceArn: `arn:aws:cloudfront::${this.account}:distribution/EDFDVBD6EXAMPLE`,
+});
+```
+
+`addPermission` allows calling every endpoint unless you pass `endpoint`. For other actions, such as letting another account create revisions, use `fn.addToResourcePolicy(statement)`. Statements use the endpoint ARN for invoking and the function ARN for actions on the function.
+
+- **One resource policy per function, written by the function's stack.** The construct creates it (`AWS::Lambda::ResourcePolicy`) with the first statement. CloudFormation can't attach a second one: another stack, or a `CfnResourcePolicy` of your own on the function, fails at change-set validation with "already exists". If you attached one yourself, move its statements into `addPermission` or `addToResourcePolicy`. Each update of the policy replaces any statements added outside CloudFormation.
+- **Public policies are rejected.** Lambda refuses a policy that lets anyone call the function, and the construct fails synthesis first. A `*` principal is only accepted with a condition that pins the caller, such as `aws:PrincipalOrgID` (`iam.OrganizationPrincipal`) or `aws:SourceAccount`. For a public endpoint, use `authType: NONE`.
+- **Scope AWS services to your resource.** Lambda accepts a service principal with no condition, which would let that service call the endpoint on behalf of any account. The construct warns unless you give `sourceArn` or `sourceAccount` (or an `aws:SourceArn`, `aws:SourceAccount`, `aws:SourceOrgID` or `aws:SourceOrgPaths` condition).
+- Lambda copies the policy to every region the function's endpoints serve from. The copy is eventually consistent, and in tests changes applied in every region within seconds.
+
 ### Functions defined elsewhere
 
 Import a Web Function defined in another stack or app to grant access to it, read its metrics, or reference its revisions:
@@ -182,7 +208,7 @@ live.metricConcurrentRequests().createAlarm(this, 'Busy', { threshold: 60, evalu
 
 An imported function's metrics default to its own region. Its endpoints, revisions and log groups stay with the stack that defines it.
 
-`grantInvoke` adds to the caller's IAM policy, which is all a caller in the function's account needs. A caller in another account also needs the function's resource policy to allow it, which this library doesn't manage yet.
+An imported function's `grantInvoke` adds to the caller's IAM policy only, which is all a caller in the function's account needs. A caller in another account also needs the function's resource policy to allow it, which only the function's own stack can change: `addToResourcePolicy` on an imported function adds nothing and warns.
 
 ## Configuration
 
@@ -395,7 +421,7 @@ new WebFunction(this, 'Api', {
 
 ## Limitations
 
-- Not yet supported: VPC access (network connectors), resource-policy permissions, KMS encryption, tracing, and a CloudFront origin.
+- Not yet supported: VPC access (network connectors), KMS encryption, tracing, and a CloudFront origin.
 - **Hotswap skips Web Functions without a warning.** `cdk deploy --hotswap` and `cdk watch`, which hotswaps by default, report `(no changes)` for a code or configuration change and the endpoint keeps serving the old revision. Use `cdk watch --hotswap-fallback` (or `cdk deploy --hotswap-fallback`): it deploys Web Function changes through CloudFormation, in about 40 seconds for a home-region endpoint.
 - Fixed limits: 512 MB of code (unzipped) and 32 KB of environment variables per revision, 512 MB of `/tmp` per execution environment, and 128 KiB of headers per request.
 - Quotas: 10 endpoints and about 50 revisions per function (Lambda cleans up older revisions automatically), and 10,000 requests per second per endpoint. Per account and region: 100,000 requests per second and 2,000 Arm64 vCPUs (each execution environment uses 2). The account quotas are adjustable, and new accounts start lower. See [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
