@@ -50,6 +50,7 @@ interface Context {
   deployment?: string;
   fail?: boolean;
   permissions?: string;
+  cdn?: boolean;
 }
 
 class Scenario {
@@ -102,6 +103,7 @@ class Scenario {
         deployment: ctx.deployment,
         fail: ctx.fail,
         permissions: ctx.permissions,
+        cdn: ctx.cdn,
       })
         .filter(([, v]) => v !== undefined).flatMap(([k, v]) => ['-c', `${k}=${v}`])];
   }
@@ -116,6 +118,19 @@ async function cdk(args: string[]) {
     const failures = output.filter((l) => /_FAILED|Resource handler returned|Received response status \[FAILED\]|❌/.test(l));
     const detail = (failures.length > 0 ? failures : output.slice(-15)).slice(0, 12).map((l) => l.slice(0, 400)).join('\n');
     throw new Error(`cdk ${args[0]} failed:\n${detail || err.message}`);
+  }
+}
+
+/** An unsigned request through CloudFront, retried while a new distribution or policy settles (transient 403s). */
+async function viaCdn(url: string, init: RequestInit = {}, timeoutMs = 300_000): Promise<{ status: number; body: any }> {
+  const end = Date.now() + timeoutMs;
+  for (;;) {
+    const res = await fetch(url, init);
+    const text = await res.text();
+    let body: any = text;
+    try { body = JSON.parse(text); } catch { /* CloudFront error page */ }
+    if (res.status === 200 || Date.now() > end) return { status: res.status, body };
+    await sleep(15_000);
   }
 }
 
@@ -657,6 +672,42 @@ async function scenarioResourcePolicy(): Promise<Scenario> {
   return s;
 }
 
+async function scenarioCloudFront(): Promise<Scenario> {
+  const s = new Scenario('Q', 'CloudFront: WebFunctionOrigin with OAC (regional SigV4, global SigV4a)');
+  const ctx: Context = { endpointType: 'PER_REGION', regions: ['us-east-1'], cdn: true };
+  let out: Outputs | undefined;
+  try {
+    out = await s.deploy(ctx);
+    const cdn = out.CdnUrl;
+    const regional = await viaCdn(`${cdn}/`);
+    s.check('/ through CloudFront: the PER_REGION endpoint in us-east-1 (SigV4)', regional.status === 200 && regional.body?.region === 'us-east-1',
+      `status=${regional.status} region=${regional.body?.region}`);
+    const home = await viaCdn(`${cdn}/home/x`);
+    s.check('/home/* through CloudFront: the same endpoint in its home region', home.status === 200 && home.body?.region === HOME,
+      `status=${home.status} region=${home.body?.region}`);
+    const global = await viaCdn(`${cdn}/global/x`);
+    s.check('/global/* through CloudFront: the MULTI_REGION endpoint (SigV4a)', global.status === 200, `status=${global.status} region=${global.body?.region}`);
+
+    const post = await viaCdn(`${cdn}/home/items`, { method: 'POST', body: 'x'.repeat(1000), headers: { 'content-type': 'text/plain' } });
+    s.check('POST with a body, no x-amz-content-sha256', post.status === 200 && post.body?.method === 'POST' && post.body?.bodyBytes === 1000,
+      `status=${post.status} method=${post.body?.method} bodyBytes=${post.body?.bodyBytes}`);
+    const auth = await viaCdn(`${cdn}/home/me`, { headers: { authorization: 'Bearer e2e-token' } });
+    s.check('viewer Authorization header reaches the application', auth.status === 200 && auth.body?.authorization === 'Bearer e2e-token',
+      `status=${auth.status} authorization=${auth.body?.authorization}`);
+
+    const direct = await call(out.Url);
+    s.check('the endpoint itself still rejects unsigned requests', direct.status === 403, `status=${direct.status}`);
+    const directGlobal = await call(out.GlobalUrl);
+    s.check('the global endpoint itself still rejects unsigned requests', directGlobal.status === 403, `status=${directGlobal.status}`);
+  } catch (e) {
+    s.check('scenario ran to completion', false, (e as Error).message);
+  } finally {
+    await s.destroy(ctx).catch((e) => s.check('destroy', false, (e as Error).message));
+    if (out) await checkNothingLeft(s, out);
+  }
+  return s;
+}
+
 async function main() {
   const all: Record<string, () => Promise<Scenario>> = {
     A: scenarioPerRegion,
@@ -668,6 +719,7 @@ async function main() {
     G: scenarioProgressive,
     H: scenarioRollbackOn,
     P: scenarioResourcePolicy,
+    Q: scenarioCloudFront,
   };
   const selected = process.argv.slice(2).filter((a) => all[a]);
   const run = selected.length > 0 ? selected : Object.keys(all);
