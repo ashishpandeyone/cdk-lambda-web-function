@@ -1,4 +1,4 @@
-import { JsonFile, ReleasableCommits, awscdk, javascript } from 'projen';
+import { JsonFile, ReleasableCommits, awscdk, github, javascript } from 'projen';
 
 const CDK_VERSION = '2.273.0';
 
@@ -28,6 +28,17 @@ const project = new awscdk.AwsCdkConstructLibrary({
   majorVersion: 0,
   // Only feat/fix commits produce a release; docs/chore/test commits don't publish a new version.
   releasableCommits: ReleasableCommits.featuresAndFixes(),
+  // projen's workflows (dependency upgrades, self-mutation) authenticate as a GitHub App (secrets PROJEN_APP_ID and
+  // PROJEN_APP_PRIVATE_KEY): main requires signed commits, and GitHub signs API commits made with app tokens, not personal ones.
+  githubOptions: {
+    projenCredentials: github.GithubCredentials.fromApp({
+      permissions: {
+        contents: github.workflows.AppPermission.WRITE,
+        pullRequests: github.workflows.AppPermission.WRITE,
+        workflows: github.workflows.AppPermission.WRITE,
+      },
+    }),
+  },
   releaseToNpm: true,
   npmTrustedPublishing: true,
 
@@ -128,8 +139,12 @@ project.package.addField('awslint', {
   ],
 });
 
-// main requires signed commits (ruleset protect-main). Commit the dependency upgrade through the GitHub API, which signs it,
-// instead of with git in the runner. projen has no option for create-pull-request's sign-commits; step 4 is "Create Pull Request".
-project.github?.tryFindWorkflow('upgrade-main')?.file?.addOverride('jobs.pr.steps.4.with.sign-commits', true);
+// main requires signed commits (ruleset protect-main). Commit the dependency upgrade through the GitHub API, which signs it
+// as the projen GitHub App, instead of with git in the runner. projen has no option for create-pull-request's sign-commits.
+const upgradeMain = project.github?.tryFindWorkflow('upgrade-main');
+const prSteps = upgradeMain?.getJob('pr') as { steps?: { name?: string }[] } | undefined;
+const createPrStep = prSteps?.steps?.findIndex((step) => step.name === 'Create Pull Request') ?? -1;
+if (createPrStep < 0) throw new Error('upgrade-main: "Create Pull Request" step not found');
+upgradeMain?.file?.addOverride(`jobs.pr.steps.${createPrStep}.with.sign-commits`, true);
 
 project.synth();

@@ -66,11 +66,20 @@ jobs:
       contents: write
     if: always() && needs.build.outputs.self_mutation_happened && !(github.event.pull_request.head.repo.full_name != github.repository)
     steps:
+      - name: Generate token
+        id: generate_token
+        uses: actions/create-github-app-token@v3.2.0
+        with:
+          app-id: ${{ secrets.PROJEN_APP_ID }}
+          private-key: ${{ secrets.PROJEN_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
       - name: Checkout
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          token: ${{ secrets.PROJEN_GITHUB_TOKEN }}
+          token: ${{ steps.generate_token.outputs.token }}
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
       - name: Download patch
