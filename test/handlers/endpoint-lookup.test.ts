@@ -49,6 +49,9 @@ test('does nothing on delete', async () => {
   expect(web.calls()).toHaveLength(0);
 });
 
-test('rejects unknown resource types', async () => {
+test('rejects unknown resource types, but accepts deleting them (a rollback to this version after an upgrade)', async () => {
   await expect(handler(cfnEvent('Create', 'Custom::Unknown', {}))).rejects.toThrow('Unsupported resource type: Custom::Unknown');
+  await expect(handler(cfnEvent('Update', 'Custom::Unknown', {}))).rejects.toThrow('Unsupported resource type: Custom::Unknown');
+  jest.spyOn(console, 'log').mockImplementation(() => {});
+  await expect(handler(cfnEvent('Delete', 'Custom::Unknown', {}, 'id-1'))).resolves.toEqual({ PhysicalResourceId: 'id-1' });
 });

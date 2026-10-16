@@ -156,6 +156,25 @@ const signed = await signer.sign(
 const response = await fetch(`https://${host}/`, { headers: signed.headers });
 ```
 
+### Functions defined elsewhere
+
+Import a Web Function defined in another stack or app to grant access to it, read its metrics, or reference its revisions:
+
+```ts
+const orders = WebFunction.fromWebFunctionArn(this, 'Orders', 'arn:aws:lambda:us-east-1:111122223333:web-function/orders');
+orders.grantInvoke(consumerRole);             // every endpoint of the function
+
+const live = WebFunction.fromWebFunctionAttributes(this, 'Live', {
+  webFunctionName: 'orders',                  // in this stack's account and region
+  endpointName: 'live',                       // grantInvoke allows this endpoint only
+});
+live.metricConcurrentRequests().createAlarm(this, 'Busy', { threshold: 60, evaluationPeriods: 3 });
+```
+
+An imported function's metrics default to its own region. Its endpoints, revisions and log groups stay with the stack that defines it.
+
+`grantInvoke` adds to the caller's IAM policy, which is all a caller in the function's account needs. A caller in another account also needs the function's resource policy to allow it, which this library doesn't manage yet.
+
 ## Configuration
 
 ```ts
@@ -207,7 +226,9 @@ new NodejsWebFunction(this, 'Api', {
 
 `code` takes any `lambda.Code` that produces a zip in S3: `fromAsset`, `fromBucket`/`fromBucketV2`, `fromCustomCommand`, `fromDockerBuild`. Inline code and container images fail at synth time.
 
-Lambda Web Functions download code as the `lambda.amazonaws.com` service principal, from a **versioned** bucket, and the CDK bootstrap bucket allows neither. So each stack gets a small code bucket, and the code is copied into it on deploy.
+Lambda Web Functions download code as the `lambda.amazonaws.com` service principal, from a **versioned** bucket, and the CDK bootstrap bucket allows neither. So each stack gets a small code bucket, and the code is copied into it on deploy. The bucket is emptied and deleted with the stack.
+
+Code copies, log groups in other regions, revision cleanup and the bucket's emptying run in one custom resource Lambda per stack. Its logs go to a log group the stack owns, kept for a month and deleted with the stack.
 
 ## Revisions
 
@@ -364,10 +385,9 @@ new WebFunction(this, 'Api', {
 
 ## Limitations
 
-- Not yet supported: importing existing functions, VPC access (network connectors), resource-policy permissions, KMS encryption, metrics helpers, tracing, and a CloudFront origin.
+- Not yet supported: VPC access (network connectors), resource-policy permissions, KMS encryption, tracing, and a CloudFront origin.
 - `cdk deploy --hotswap` and `cdk watch` don't support Web Functions.
 - Quotas: 10 endpoints and about 50 revisions per function (Lambda cleans up older revisions automatically), and 10,000 requests per second per endpoint. Per account and region: 100,000 requests per second and 2,000 Arm64 vCPUs (each execution environment uses 2). The account quotas are adjustable, and new accounts start lower. See [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
-- The stack's custom resource provider Lambda keeps its own log group after the stack is deleted, as with other CDK custom resources.
 
 ## Development
 

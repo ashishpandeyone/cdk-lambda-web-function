@@ -168,7 +168,6 @@
     "exclude": [
       "construct-ctor:@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint",
       "construct-ctor:@ashishpandeyone/cdk-lambda-web-function.WebFunctionRevision",
-      "from-method:@ashishpandeyone/cdk-lambda-web-function.WebFunction",
       "resource-interface:@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction"
     ]
   },

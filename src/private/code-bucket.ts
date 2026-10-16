@@ -1,7 +1,9 @@
-import { Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { CustomResource, Duration, RemovalPolicy, Stack, Tags } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
+import { grantToProvider, webFunctionProvider } from './provider';
+import { CODE_BUCKET_CLEANUP_RESOURCE_TYPE, EMPTY_ON_DELETE_TAG, type CodeBucketCleanupProperties } from './provider-protocol';
 
 const ID = 'LambdaWebFunctionCodeBucket';
 
@@ -12,6 +14,9 @@ const ID = 'LambdaWebFunctionCodeBucket';
  * reject unversioned buckets; the CDK bootstrap bucket allows neither, so code is copied here.
  * Revisions capture their code when they're created, so superseded versions can expire, but
  * current objects must stay: a later revision may be created from the same object.
+ *
+ * The shared provider empties it when it's deleted (instead of `autoDeleteObjects`, which adds another
+ * Lambda function whose log group outlives the stack).
  */
 export function codeBucket(scope: Construct): s3.Bucket {
   const stack = Stack.of(scope);
@@ -24,7 +29,6 @@ export function codeBucket(scope: Construct): s3.Bucket {
     blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
     encryption: s3.BucketEncryption.S3_MANAGED,
     removalPolicy: RemovalPolicy.DESTROY,
-    autoDeleteObjects: true,
     lifecycleRules: [{
       id: 'ExpireSupersededCode',
       noncurrentVersionExpiration: Duration.days(30),
@@ -38,5 +42,18 @@ export function codeBucket(scope: Construct): s3.Bucket {
     resources: [bucket.arnForObjects('*')],
     conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
   }));
+
+  // Only a tagged bucket is emptied (see EMPTY_ON_DELETE_TAG).
+  Tags.of(bucket).add(EMPTY_ON_DELETE_TAG.key, EMPTY_ON_DELETE_TAG.value);
+  const provider = webFunctionProvider(stack);
+  grantToProvider(provider, { Action: ['s3:ListBucketVersions', 's3:GetBucketTagging'], Resource: bucket.bucketArn });
+  grantToProvider(provider, { Action: ['s3:DeleteObject', 's3:DeleteObjectVersion'], Resource: bucket.arnForObjects('*') });
+  const properties: CodeBucketCleanupProperties = { BucketName: bucket.bucketName };
+  // Depends on the bucket (through its name), so it's deleted, and empties it, just before the bucket.
+  new CustomResource(stack, `${ID}Cleanup`, {
+    serviceToken: provider.serviceToken,
+    resourceType: CODE_BUCKET_CLEANUP_RESOURCE_TYPE,
+    properties: { ...properties },
+  });
   return bucket;
 }

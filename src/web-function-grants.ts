@@ -9,10 +9,19 @@ export class WebFunctionGrants {
    * @internal
    */
   public static _forEndpoint(endpoint: WebFunctionEndpoint): WebFunctionGrants {
-    return new WebFunctionGrants(endpoint);
+    return new WebFunctionGrants(() => [endpoint.endpointArn]);
   }
 
-  private constructor(private readonly endpoint: WebFunctionEndpoint) {}
+  /**
+   * Grants on endpoints known only by ARN (an imported function's).
+   *
+   * @internal
+   */
+  public static _forEndpointArns(endpointArns: string[]): WebFunctionGrants {
+    return new WebFunctionGrants(() => endpointArns);
+  }
+
+  private constructor(private readonly endpointArns: () => string[]) {}
 
   /**
    * Allows `grantee` to call the endpoint (`lambda:InvokeWebFunctionEndpoint`).
@@ -24,7 +33,7 @@ export class WebFunctionGrants {
     return iam.Grant.addToPrincipal({
       grantee,
       actions: ['lambda:InvokeWebFunctionEndpoint'],
-      resourceArns: [this.endpoint.endpointArn],
+      resourceArns: this.endpointArns(),
     });
   }
 }

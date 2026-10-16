@@ -8,7 +8,7 @@
  * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500).
  */
 import * as path from 'node:path';
-import { App, CfnOutput, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { App, CfnOutput, CfnResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -71,6 +71,9 @@ const fn = ctx('kind', 'web') === 'nodejs'
 const consumer = new iam.Role(stack, 'Consumer', { assumedBy: new iam.AccountRootPrincipal() });
 fn.grants.invoke(consumer);
 const outsider = new iam.Role(stack, 'Outsider', { assumedBy: new iam.AccountRootPrincipal() });
+// A caller granted through an import of the same function (every endpoint).
+const importer = new iam.Role(stack, 'Importer', { assumedBy: new iam.AccountRootPrincipal() });
+WebFunction.fromWebFunctionArn(stack, 'Imported', fn.webFunctionArn).grantInvoke(importer);
 
 const out = (id: string, value: string) => new CfnOutput(stack, id, { value });
 out('FunctionName', fn.webFunctionName);
@@ -81,6 +84,7 @@ out('Regions', JSON.stringify(fn.endpoint.regions));
 out('RevisionId', fn.revisionId);
 out('ConsumerRoleArn', consumer.roleArn);
 out('OutsiderRoleArn', outsider.roleArn);
+out('ImporterRoleArn', importer.roleArn);
 if (endpointType === WebFunctionEndpointType.PER_REGION) {
   for (const region of fn.endpoint.regions) out(`Url${region.replace(/-/g, '')}`, fn.endpoint.regionalUrl(region));
 }
@@ -118,3 +122,10 @@ if (forcedErrors) {
 }
 
 if (rollbackOn) out('HomeRollbackAlarm', fn.endpoint.rollbackAlarms[0].alarmName);
+
+// failDeploy=true: a resource that fails about a minute after the function, forcing the update to roll back.
+if (ctx('failDeploy') === 'true') {
+  const handle = new CfnResource(stack, 'FailHandle', { type: 'AWS::CloudFormation::WaitConditionHandle' });
+  const wait = new CfnResource(stack, 'Fail', { type: 'AWS::CloudFormation::WaitCondition', properties: { Handle: handle.ref, Timeout: '1', Count: 1 } });
+  wait.node.addDependency(fn);
+}

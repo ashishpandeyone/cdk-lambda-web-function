@@ -16,6 +16,7 @@ import { Sha256 } from '@aws-crypto/sha256-js';
 import { CloudWatchClient, DescribeAlarmsCommand, PutMetricDataCommand, SetAlarmStateCommand } from '@aws-sdk/client-cloudwatch';
 import { CloudWatchLogsClient, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { GetWebFunctionEndpointCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
+import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
 import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 import { SignatureV4a } from '@smithy/signature-v4a';
@@ -207,6 +208,17 @@ async function checkNothingLeft(s: Scenario, out: Outputs) {
     }
     s.check(`no log groups left in any region (${pass})`, left.length === 0, left.join(', '));
   }
+  // The stack's own leftovers: the code bucket (emptied by the provider) and the provider's log groups.
+  const stackName = `WebFnE2E-${s.id}`;
+  const buckets = await new S3Client({ region: HOME, credentials }).send(new ListBucketsCommand({ Prefix: stackName.toLowerCase() }));
+  const bucketsLeft = (buckets.Buckets ?? []).map((b) => b.Name!);
+  s.check('code bucket deleted', bucketsLeft.length === 0, bucketsLeft.join(', '));
+  const providerLogs: string[] = [];
+  for (const prefix of [stackName, `/aws/lambda/${stackName}`]) {
+    const r = await logsIn(HOME).send(new DescribeLogGroupsCommand({ logGroupNamePrefix: prefix }));
+    for (const g of r.logGroups ?? []) providerLogs.push(g.logGroupName!);
+  }
+  s.check('custom resource provider log groups deleted', providerLogs.length === 0, providerLogs.join(', '));
 }
 
 async function revisionIds(functionName: string): Promise<string[]> {
@@ -226,6 +238,9 @@ async function checkIamAccess(s: Scenario, url: string, out: Outputs, label: str
   s.check(`${label}: role with grants.invoke() is allowed`, granted.status === 200, `status=${granted.status}`);
   const denied = await call(url, outsider);
   s.check(`${label}: role without the grant is denied`, denied.status === 403, `status=${denied.status}`);
+  const importer = await assume(out.ImporterRoleArn);
+  const imported = await callUntil(url, importer, 200);
+  s.check(`${label}: role granted through WebFunction.fromWebFunctionArn() is allowed`, imported.status === 200, `status=${imported.status}`);
   return signed;
 }
 
