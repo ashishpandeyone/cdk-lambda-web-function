@@ -1,4 +1,5 @@
 import { Duration, type IResource, Lazy, Names, RemovalPolicy, Resource, Stack, Token, Validations } from 'aws-cdk-lib';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -6,6 +7,7 @@ import { Construct } from 'constructs';
 import { WebFunctionAuthType } from './enums';
 import { WebFunctionCode } from './private/code';
 import { WebFunctionLogGroup } from './private/log-group';
+import { DEFAULT_PERIOD, WEB_NAMESPACE } from './private/metrics';
 import { RevisionCleanup } from './private/revision-cleanup';
 import { CFN_VALIDATE_UNKNOWN_TYPE, assertResourceName } from './private/validation';
 import { WebFunctionEndpoint, type AddWebFunctionEndpointOptions, type WebFunctionEndpointOptions } from './web-function-endpoint';
@@ -349,6 +351,60 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
    */
   public grantInvoke(grantee: iam.IGrantable): iam.Grant {
     return this.grants.invoke(grantee);
+  }
+
+  /**
+   * A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints.
+   * For request and error counts, use the endpoint's metrics (`fn.endpoint.metricRequests()`).
+   *
+   * Metrics are published in the region that served the request: pass `region` for another serving region.
+   * An alarm can only use metrics from its own stack's region.
+   *
+   * @default - sum over 1 minute, in the home region
+   */
+  public metric(metricName: string, props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return new cloudwatch.Metric({
+      namespace: WEB_NAMESPACE,
+      metricName,
+      dimensionsMap: { FunctionName: this.webFunctionName },
+      statistic: cloudwatch.Stats.SUM,
+      period: DEFAULT_PERIOD,
+      ...props,
+    });
+  }
+
+  /** Time the execution environments were active (`EnvironmentActiveTime`). */
+  public metricActiveTime(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('EnvironmentActiveTime', props);
+  }
+
+  /** CPU time the execution environments used (`EnvironmentCPUTime`). */
+  public metricCpuTime(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('EnvironmentCPUTime', props);
+  }
+
+  /**
+   * Requests an execution environment handled at once (`EnvironmentConcurrentRequests`), to compare with
+   * `maxConcurrencyPerEnvironment`.
+   *
+   * @default - maximum over 1 minute
+   */
+  public metricConcurrentRequests(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('EnvironmentConcurrentRequests', { statistic: cloudwatch.Stats.MAXIMUM, ...props });
+  }
+
+  /**
+   * Peak memory an execution environment used (`EnvironmentMaxMemoryUsage`); each environment has 2 GB.
+   *
+   * @default - maximum over 1 minute
+   */
+  public metricMaxMemoryUsage(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('EnvironmentMaxMemoryUsage', { statistic: cloudwatch.Stats.MAXIMUM, ...props });
+  }
+
+  /** Bytes sent in responses (`ResponseBytes`). */
+  public metricResponseBytes(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric('ResponseBytes', props);
   }
 
   private createEndpoint(id: string, options: AddWebFunctionEndpointOptions, namePrefix: string, nameSeed?: string): WebFunctionEndpoint {

@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { Sha256 } from '@aws-crypto/sha256-js';
-import { CloudWatchClient, PutMetricDataCommand, SetAlarmStateCommand } from '@aws-sdk/client-cloudwatch';
+import { CloudWatchClient, DescribeAlarmsCommand, PutMetricDataCommand, SetAlarmStateCommand } from '@aws-sdk/client-cloudwatch';
 import { CloudWatchLogsClient, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { GetWebFunctionEndpointCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
 import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
@@ -47,6 +47,7 @@ interface Context {
   stable?: string;
   split?: string;
   deployment?: string;
+  fail?: boolean;
 }
 
 class Scenario {
@@ -97,6 +98,7 @@ class Scenario {
         stable: ctx.stable,
         split: ctx.split,
         deployment: ctx.deployment,
+        fail: ctx.fail,
       })
         .filter(([, v]) => v !== undefined).flatMap(([k, v]) => ['-c', `${k}=${v}`])];
   }
@@ -529,6 +531,68 @@ async function scenarioProgressive(): Promise<Scenario> {
   return s;
 }
 
+async function alarmsNamed(region: string, names: string[]) {
+  const r = await new CloudWatchClient({ region, credentials }).send(new DescribeAlarmsCommand({ AlarmNames: names }));
+  return r.MetricAlarms ?? [];
+}
+
+async function scenarioRollbackOn(): Promise<Scenario> {
+  const s = new Scenario('H', 'rollbackOn: endpoint alarms in every region, a real 5XX rate rolls a canary back');
+  const base: Context = { endpointType: 'MULTI_REGION', regions: ['us-east-1'], deployment: 'rollbackOn' };
+  let ctx: Context = { ...base, appVersion: 'h1' };
+  let out: Outputs | undefined;
+  let remoteAlarm = '';
+  const admin = await adminCredentials();
+  try {
+    // 1. First deploy: the endpoint's alarms exist at home and in us-east-1.
+    out = await s.deploy(ctx);
+    const r1 = out.RevisionId;
+    remoteAlarm = `LambdaWeb-${out.FunctionName}-${out.EndpointName}-5xx-rate`;
+    const [home] = await alarmsNamed(HOME, [out.HomeRollbackAlarm]);
+    s.check('home-region rollback alarm exists', home?.Threshold === 10 && home?.EvaluationPeriods === 1, `${home?.AlarmName} threshold=${home?.Threshold}`);
+    const [remote] = await alarmsNamed('us-east-1', [remoteAlarm]);
+    s.check('us-east-1 rollback alarm exists with the same rule', remote?.Threshold === 10
+      && (remote?.Metrics ?? []).some((m) => m.Expression === 'IF(requests >= 5, 100 * FILL(errors, 0) / requests, 0)'), remote?.AlarmName ?? 'missing');
+    s.check('first deploy serves h1', (await callUntil(out.Url, admin, 200, 120_000)).body?.appVersion === 'h1');
+
+    // 2. A revision that answers 500: the canary sends it half the traffic until the 5XX alarm rolls it back.
+    const before = out;
+    ctx = { ...base, appVersion: 'h2', fail: true };
+    const started = Date.now();
+    let settled = false;
+    const failing = s.deploy(ctx).then(() => undefined, (e: Error) => e).finally(() => { settled = true; });
+    const statuses: Record<string, number> = {};
+    while (!settled) {
+      const res = await call(before.Url, admin).catch(() => ({ status: 0, body: undefined }));
+      const key = `${res.status} ${res.body?.appVersion ?? '-'}`;
+      statuses[key] = (statuses[key] ?? 0) + 1;
+      await sleep(300);
+    }
+    const error = await failing;
+    const minutes = Math.round((Date.now() - started) / 6000) / 10;
+    s.log(`traffic during the canary: ${JSON.stringify(statuses)}`);
+    s.check('the failing revision served 500s during the canary', (statuses['500 h2'] ?? 0) > 0, JSON.stringify(statuses));
+    s.check('the endpoint\'s own 5XX alarm failed the deployment', error !== undefined && /went into ALARM/.test(error.message) && error.message.includes(before.HomeRollbackAlarm),
+      (error?.message ?? 'deploy succeeded').split('\n').slice(0, 3).join(' | '));
+    s.check('it rolled back before the 8-minute bake ended', minutes < 11, `${minutes} min`);
+    const after = await endpointWeights(before.FunctionName, before.EndpointName);
+    s.check('rollback: the endpoint is back on the first revision in every region', after.settled && after.weights === `${r1}:100`, after.weights);
+    const served = await call(before.Url, admin);
+    s.check('rollback: serves h1 again', served.status === 200 && served.body?.appVersion === 'h1', `${served.status} ${served.body?.appVersion}`);
+    ctx = { ...base, appVersion: 'h1' };
+  } catch (e) {
+    s.check('scenario ran to completion', false, (e as Error).message);
+  } finally {
+    await s.destroy(ctx).catch((e) => s.check('destroy', false, (e as Error).message));
+    if (out) {
+      await checkNothingLeft(s, out);
+      s.check('rollback alarms deleted at home and in us-east-1',
+        (await alarmsNamed(HOME, [out.HomeRollbackAlarm])).length === 0 && (await alarmsNamed('us-east-1', [remoteAlarm])).length === 0);
+    }
+  }
+  return s;
+}
+
 async function main() {
   const all: Record<string, () => Promise<Scenario>> = {
     A: scenarioPerRegion,
@@ -538,6 +602,7 @@ async function main() {
     E: scenarioNodejsDocker,
     F: scenarioEndpointsAndRevisions,
     G: scenarioProgressive,
+    H: scenarioRollbackOn,
   };
   const selected = process.argv.slice(2).filter((a) => all[a]);
   const run = selected.length > 0 ? selected : Object.keys(all);

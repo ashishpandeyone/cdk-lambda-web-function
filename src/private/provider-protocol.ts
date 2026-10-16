@@ -95,3 +95,22 @@ export interface TrafficShiftState {
   /** `switch`: the weights being written (JSON `[{revisionId, weight}]`). */
   readonly TargetWeights?: string;
 }
+
+/** Creates a CloudWatch metric alarm in any region (CloudFormation only creates alarms in the stack's region). */
+/** Prefix of every alarm this library creates outside the stack's region; the provider's IAM is scoped to it. */
+export const ALARM_NAME_PREFIX = 'LambdaWeb-';
+export const REGIONAL_ALARM_RESOURCE_TYPE = 'Custom::LambdaWebAlarm';
+
+export interface RegionalAlarmProperties {
+  readonly Region: string;
+  readonly AlarmName: string;
+  readonly AlarmDescription: string;
+  /** PutMetricAlarm's `Metrics`, as JSON. */
+  readonly Metrics: string;
+  readonly Threshold: string;
+  readonly EvaluationPeriods: string;
+  /** PutMetricAlarm's `ComparisonOperator`. */
+  readonly ComparisonOperator: string;
+  /** PutMetricAlarm's `TreatMissingData`. */
+  readonly TreatMissingData: string;
+}

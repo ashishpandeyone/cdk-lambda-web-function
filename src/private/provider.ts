@@ -1,14 +1,15 @@
 import * as path from 'node:path';
-import { CustomResourceProvider, CustomResourceProviderRuntime, Duration, Size, Stack } from 'aws-cdk-lib';
+import { ArnFormat, CustomResourceProvider, CustomResourceProviderRuntime, Duration, Size, Stack } from 'aws-cdk-lib';
 import type { Construct } from 'constructs';
+import { ALARM_NAME_PREFIX } from './provider-protocol';
 
 /**
- * The single custom resource provider (one Lambda per stack) behind code copies, log groups
- * and endpoint lookups. It's a core `CustomResourceProvider`, not a `lambda.Function`, so
- * tools that discover functions by class (e.g. cdk-watchful) don't pick it up.
+ * The single custom resource provider (one Lambda per stack) behind code copies, log groups,
+ * endpoint lookups, revision cleanup and alarms in other regions. It's a core `CustomResourceProvider`,
+ * not a `lambda.Function`, so tools that discover functions by class (e.g. cdk-watchful) don't pick it up.
  */
 export function webFunctionProvider(scope: Construct): CustomResourceProvider {
-  return CustomResourceProvider.getOrCreateProvider(scope, 'Custom::LambdaWebFunctionProvider', {
+  const provider = CustomResourceProvider.getOrCreateProvider(scope, 'Custom::LambdaWebFunctionProvider', {
     codeDirectory: path.join(__dirname, '..', '..', 'assets', 'web-function-provider'),
     runtime: CustomResourceProviderRuntime.NODEJS_24_X,
     // Log group deletion waits for late flushes (75s + a re-check) on top of the API calls.
@@ -16,6 +17,15 @@ export function webFunctionProvider(scope: Construct): CustomResourceProvider {
     memorySize: Size.mebibytes(256),
     description: 'Copies code, manages log groups, looks up endpoints and cleans up revisions for Lambda Web Functions',
   });
+  // Granted whether or not a stack has alarms in other regions yet: a grant added or removed together with the
+  // alarm fails on IAM propagation, or leaves the alarm behind when it's removed (see grantToProvider).
+  grantToProvider(provider, {
+    Action: ['cloudwatch:PutMetricAlarm', 'cloudwatch:DeleteAlarms'],
+    Resource: Stack.of(provider).formatArn({
+      service: 'cloudwatch', region: '*', resource: 'alarm', resourceName: `${ALARM_NAME_PREFIX}*`, arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+    }),
+  });
+  return provider;
 }
 
 const granted = new WeakMap<CustomResourceProvider, Set<string>>();

@@ -1,10 +1,17 @@
 import { createHash } from 'node:crypto';
-import { Annotations, Stack, Token, Validations } from 'aws-cdk-lib';
+import { Annotations, Duration, Stack, Token, Validations } from 'aws-cdk-lib';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { WebFunctionAuthType, WebFunctionEndpointType } from './enums';
 import { EndpointLookup } from './private/endpoint-lookup';
+import {
+  CLIENT_ERRORS, DEFAULT_PERIOD, REQUESTS, SERVER_ERRORS, USAGE_NAMESPACE, WEB_NAMESPACE,
+  endpointDimensions, rateAlarmQueries, rateExpression,
+} from './private/metrics';
+import { ALARM_NAME_PREFIX, RegionalAlarm } from './private/regional-alarm';
+import type { ResolvedRollbackOptions } from './private/rollback';
 import { TrafficShift } from './private/traffic-shift';
 import { CFN_VALIDATE_UNKNOWN_TYPE, assertResourceName } from './private/validation';
 import type { IWebFunction } from './web-function';
@@ -185,6 +192,12 @@ export class WebFunctionEndpoint extends Construct {
   /** Grants on this endpoint (e.g. `grants.invoke(principal)`). */
   public readonly grants: WebFunctionGrants;
 
+  /**
+   * The alarms this endpoint created for its deployment's `rollbackOn`, one per threshold in every region it serves from
+   * (the home region's first). Empty without `rollbackOn`.
+   */
+  public readonly rollbackAlarms: cloudwatch.IAlarm[] = [];
+
   private readonly homeRegion: string;
   private readonly webFunction: IWebFunction;
   private readonly resource: lambda.CfnWebFunctionEndpoint;
@@ -239,6 +252,13 @@ export class WebFunctionEndpoint extends Construct {
       if (props.revision !== undefined || props.additionalRevisions !== undefined) {
         throw new Error(`${this.node.path}: an endpoint with a ${props.deployment._kind} deployment always moves to the current revision; it can't also set revision or additionalRevisions`);
       }
+      const rollbackAlarmArns = props.deployment._rollbackOn ? this.createRollbackAlarms(props.deployment._rollbackOn) : [];
+      const waitSeconds = props.deployment._waitSeconds;
+      const rollback = props.deployment._rollbackOn;
+      if (rollback && waitSeconds < rollback.period.toSeconds() * rollback.evaluationPeriods + 120) {
+        Annotations.of(this).addWarningV2('@cdk-lambda-web:rollbackSlowerThanStep',
+          `rollbackOn needs ${rollback.evaluationPeriods} period(s) of ${rollback.period.toHumanString()} plus about 2 minutes of CloudWatch delay to fire, longer than each ${props.deployment._kind} step (${Duration.seconds(waitSeconds).toHumanString()}): a bad revision can reach the next step before its alarm fires.`);
+      }
       // Moves the traffic in steps before CloudFormation writes the endpoint, which then finds it already done.
       const shift = new TrafficShift(this, 'Deployment', {
         functionName: props.webFunction.webFunctionName,
@@ -246,6 +266,7 @@ export class WebFunctionEndpoint extends Construct {
         endpointName: this.endpointName,
         revisionId: props.currentRevision.revisionId,
         deployment: props.deployment,
+        alarmArns: rollbackAlarmArns,
         endpointConfig: {
           endpointType,
           authType: props.authType,
@@ -256,6 +277,8 @@ export class WebFunctionEndpoint extends Construct {
         },
       });
       resource.node.addDependency(shift);
+      // Alarms in other regions are only referenced by ARN.
+      for (const alarm of this.node.findAll().filter((c) => c instanceof RegionalAlarm)) shift.node.addDependency(alarm);
     }
     if (props.revision !== undefined || props.additionalRevisions !== undefined) {
       this.routeTraffic(props.revision ?? props.currentRevision, props.additionalRevisions);
@@ -322,11 +345,157 @@ export class WebFunctionEndpoint extends Construct {
   }
 
   /**
+   * A metric of this endpoint in `AWS/Lambda/Web` (dimensions `FunctionName` and `EndpointName`).
+   *
+   * Metrics are published in the region that served the request: pass `region` for one of the endpoint's
+   * other regions. An alarm can only use metrics from its own stack's region.
+   *
+   * @default - sum over 1 minute, in the home region
+   */
+  public metric(metricName: string, props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return new cloudwatch.Metric({
+      namespace: WEB_NAMESPACE,
+      metricName,
+      dimensionsMap: endpointDimensions(this.metricIds()),
+      statistic: cloudwatch.Stats.SUM,
+      period: DEFAULT_PERIOD,
+      ...props,
+    });
+  }
+
+  /** Requests the endpoint served (`ExecutedRequests`). There's no separate count of successful (2XX) responses. */
+  public metricRequests(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric(REQUESTS, props);
+  }
+
+  /**
+   * Requests answered with a 4XX status (`HTTPResponseStatusClass4XX`), including 429s from `rateLimit` and `maxEnvironments`.
+   * The metric only exists once it's non-zero, so alarms should treat missing data as not breaching.
+   */
+  public metricClientErrors(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric(CLIENT_ERRORS, props);
+  }
+
+  /**
+   * Requests answered with a 5XX status (`HTTPResponseStatusClass5XX`). Includes the platform's 503s while the endpoint
+   * scales up for a sudden burst, not only your application's errors. The metric only exists once it's non-zero.
+   */
+  public metricServerErrors(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.metric(SERVER_ERRORS, props);
+  }
+
+  /** The percentage of requests answered with a 4XX status (math expression; periods with no 4XX count as 0). */
+  public metricClientErrorRate(props?: cloudwatch.MetricOptions): cloudwatch.MathExpression {
+    return this.rate(CLIENT_ERRORS, 'Client error rate (%)', props);
+  }
+
+  /** The percentage of requests answered with a 5XX status (math expression; periods with no 5XX count as 0). */
+  public metricServerErrorRate(props?: cloudwatch.MetricOptions): cloudwatch.MathExpression {
+    return this.rate(SERVER_ERRORS, 'Server error rate (%)', props);
+  }
+
+  /**
+   * Execution environments serving the endpoint (`EndpointActiveEnvironments`), to compare with `maxEnvironments`.
+   *
+   * @default - maximum over 1 minute, in the home region
+   */
+  public metricActiveEnvironments(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.usageMetric('EndpointActiveEnvironments', cloudwatch.Stats.MAXIMUM, props);
+  }
+
+  /** Requests rejected with 429 because the endpoint reached its `rateLimit` (`EndpointRequestThrottles`). */
+  public metricRequestThrottles(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.usageMetric('EndpointRequestThrottles', cloudwatch.Stats.SUM, props);
+  }
+
+  /** Requests rejected with 429 because the endpoint reached `maxEnvironments` (`EndpointActiveEnvironmentThrottles`). */
+  public metricEnvironmentThrottles(props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return this.usageMetric('EndpointActiveEnvironmentThrottles', cloudwatch.Stats.SUM, props);
+  }
+
+  /**
    * Allows `grantee` to call this endpoint. Shortcut for `grants.invoke(grantee)`.
    * [disable-awslint:no-grants]
    */
   public grantInvoke(grantee: iam.IGrantable): iam.Grant {
     return this.grants.invoke(grantee);
+  }
+
+  private metricIds() {
+    return { functionName: this.webFunction.webFunctionName, endpointName: this.endpointName };
+  }
+
+  private rate(errorMetric: string, label: string, props?: cloudwatch.MetricOptions): cloudwatch.MathExpression {
+    const period = props?.period ?? DEFAULT_PERIOD;
+    const options = { period, region: props?.region, account: props?.account };
+    return new cloudwatch.MathExpression({
+      expression: rateExpression(1),
+      usingMetrics: { requests: this.metric(REQUESTS, options), errors: this.metric(errorMetric, options) },
+      period,
+      label: props?.label ?? label,
+    });
+  }
+
+  private usageMetric(metricName: string, statistic: string, props?: cloudwatch.MetricOptions): cloudwatch.Metric {
+    return new cloudwatch.Metric({
+      namespace: USAGE_NAMESPACE,
+      metricName,
+      dimensionsMap: { ...endpointDimensions(this.metricIds()), ExecutionRegion: props?.region ?? this.homeRegion },
+      statistic,
+      period: DEFAULT_PERIOD,
+      ...props,
+    });
+  }
+
+  /** One alarm per threshold in every serving region: a CloudFormation alarm at home, a custom resource elsewhere. Returns their ARNs. */
+  private createRollbackAlarms(rollback: ResolvedRollbackOptions): string[] {
+    const thresholds = [
+      { key: 'ServerErrors', short: '5xx', metric: SERVER_ERRORS, status: '5XX', threshold: rollback.serverErrorRate },
+      { key: 'ClientErrors', short: '4xx', metric: CLIENT_ERRORS, status: '4XX', threshold: rollback.clientErrorRate },
+    ];
+    const arns: string[] = [];
+    for (const t of thresholds) {
+      if (t.threshold === undefined) continue;
+      for (const region of this.regions) {
+        const description = `Rolls back deployments of endpoint ${this.endpointName} of ${this.webFunction.webFunctionName} when more than `
+          + `${t.threshold}% of its requests in ${region} get a ${t.status} response (${rollback.evaluationPeriods} x ${rollback.period.toHumanString()}, `
+          + `periods with fewer than ${rollback.minimumRequests} requests ignored).`;
+        if (region === this.homeRegion) {
+          const alarm = new cloudwatch.Alarm(this, `Rollback${t.key}`, {
+            metric: new cloudwatch.MathExpression({
+              expression: rateExpression(rollback.minimumRequests),
+              usingMetrics: {
+                requests: this.metric(REQUESTS, { period: rollback.period }),
+                errors: this.metric(t.metric, { period: rollback.period }),
+              },
+              period: rollback.period,
+              label: `${t.status} rate (%)`,
+            }),
+            threshold: t.threshold,
+            evaluationPeriods: rollback.evaluationPeriods,
+            comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+            alarmDescription: description,
+          });
+          this.rollbackAlarms.push(alarm);
+          arns.push(alarm.alarmArn);
+        } else {
+          const alarm = new RegionalAlarm(this, `Rollback${t.key}-${region}`, {
+            region,
+            alarmName: `${ALARM_NAME_PREFIX}${this.webFunction.webFunctionName}-${this.endpointName}-${t.short}-rate`,
+            alarmDescription: description,
+            metrics: rateAlarmQueries(this.metricIds(), t.metric, rollback.period, rollback.minimumRequests),
+            threshold: t.threshold,
+            evaluationPeriods: rollback.evaluationPeriods,
+            comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+          });
+          this.rollbackAlarms.push(cloudwatch.Alarm.fromAlarmArn(this, `Rollback${t.key}-${region}-Ref`, alarm.alarmArn));
+          arns.push(alarm.alarmArn);
+        }
+      }
+    }
+    return arns;
   }
 }
 
