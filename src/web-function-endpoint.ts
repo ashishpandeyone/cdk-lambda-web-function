@@ -192,6 +192,9 @@ export class WebFunctionEndpoint extends Construct {
   /** Grants on this endpoint (e.g. `grants.invoke(principal)`). */
   public readonly grants: WebFunctionGrants;
 
+  /** The function this endpoint belongs to. */
+  public readonly webFunction: IWebFunction;
+
   /**
    * The alarms this endpoint created for its deployment's `rollbackOn`, one per threshold in every region it serves from
    * (the home region's first). Empty without `rollbackOn`.
@@ -199,7 +202,6 @@ export class WebFunctionEndpoint extends Construct {
   public readonly rollbackAlarms: cloudwatch.IAlarm[] = [];
 
   private readonly homeRegion: string;
-  private readonly webFunction: IWebFunction;
   private readonly resource: lambda.CfnWebFunctionEndpoint;
   private weights: lambda.CfnWebFunctionEndpoint.RevisionWeightProperty[];
   private routed = false;
@@ -296,14 +298,23 @@ export class WebFunctionEndpoint extends Construct {
    * @param region one of `regions`
    */
   public regionalUrl(region: string): string {
+    return `https://${this.regionalDomainName(region)}`;
+  }
+
+  /**
+   * The domain name of this endpoint in one region. Only for `PER_REGION` endpoints.
+   *
+   * @param region one of `regions`
+   */
+  public regionalDomainName(region: string): string {
     if (this.endpointType !== WebFunctionEndpointType.PER_REGION) {
-      throw new Error(`${this.node.path}: regionalUrl() is only available for PER_REGION endpoints (this one is ${this.endpointType}); use url`);
+      throw new Error(`${this.node.path}: regional URLs and domain names are only available for PER_REGION endpoints (this one is ${this.endpointType}); use url or domainName`);
     }
     if (!this.regions.includes(region)) {
       throw new Error(`${this.node.path}: region ${region} is not one of the endpoint's regions (${this.regions.join(', ')})`);
     }
     if (region === this.homeRegion) {
-      return this.url;
+      return this.domainName;
     }
     this.lookup ??= new EndpointLookup(this, 'Lookup', {
       functionName: this.webFunction.webFunctionName,
@@ -311,7 +322,7 @@ export class WebFunctionEndpoint extends Construct {
       endpointName: this.endpointName,
       endpointArn: this.endpointArn,
     });
-    return `https://${this.lookup.regionalDomain(region)}`;
+    return this.lookup.regionalDomain(region);
   }
 
   /**

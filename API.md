@@ -1856,6 +1856,7 @@ Endpoints are created only through `WebFunction`, which owns their log groups in
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricRequestThrottles">metricRequestThrottles</a></code> | Requests rejected with 429 because the endpoint reached its `rateLimit` (`EndpointRequestThrottles`). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricServerErrorRate">metricServerErrorRate</a></code> | The percentage of requests answered with a 5XX status (math expression; |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.metricServerErrors">metricServerErrors</a></code> | Requests answered with a 5XX status (`HTTPResponseStatusClass5XX`). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.regionalDomainName">regionalDomainName</a></code> | The domain name of this endpoint in one region. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.regionalUrl">regionalUrl</a></code> | The URL of this endpoint in one region. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.routeTraffic">routeTraffic</a></code> | Routes the endpoint to `revision` instead of the function's current revision, optionally sharing traffic with one more revision (`additionalRevisions`, which gets its weight; |
 
@@ -2053,6 +2054,24 @@ scales up for a sudden burst, not only your application's errors. The metric onl
 
 ---
 
+##### `regionalDomainName` <a name="regionalDomainName" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.regionalDomainName"></a>
+
+```typescript
+public regionalDomainName(region: string): string
+```
+
+The domain name of this endpoint in one region.
+
+Only for `PER_REGION` endpoints.
+
+###### `region`<sup>Required</sup> <a name="region" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.regionalDomainName.parameter.region"></a>
+
+- *Type:* string
+
+one of `regions`.
+
+---
+
 ##### `regionalUrl` <a name="regionalUrl" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.regionalUrl"></a>
 
 ```typescript
@@ -2152,6 +2171,7 @@ Any object.
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.regions">regions</a></code> | <code>string[]</code> | Every region the endpoint serves from: the home region first, then the others in alphabetical order. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.rollbackAlarms">rollbackAlarms</a></code> | <code>aws-cdk-lib.aws_cloudwatch.IAlarm[]</code> | The alarms this endpoint created for its deployment's `rollbackOn`, one per threshold in every region it serves from (the home region's first). |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.url">url</a></code> | <code>string</code> | The endpoint's URL: the global URL for `MULTI_REGION`, otherwise the home region's. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.webFunction">webFunction</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunction">IWebFunction</a></code> | The function this endpoint belongs to. |
 
 ---
 
@@ -2274,6 +2294,18 @@ public readonly url: string;
 - *Type:* string
 
 The endpoint's URL: the global URL for `MULTI_REGION`, otherwise the home region's.
+
+---
+
+##### `webFunction`<sup>Required</sup> <a name="webFunction" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint.property.webFunction"></a>
+
+```typescript
+public readonly webFunction: IWebFunction;
+```
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.IWebFunction">IWebFunction</a>
+
+The function this endpoint belongs to.
 
 ---
 
@@ -3738,6 +3770,467 @@ Renaming a function replaces it, and its endpoint gets a new URL.
 
 ---
 
+### WebFunctionOriginProps <a name="WebFunctionOriginProps" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps"></a>
+
+Properties for a Web Function endpoint origin.
+
+#### Initializer <a name="Initializer" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.Initializer"></a>
+
+```typescript
+import { WebFunctionOriginProps } from '@ashishpandeyone/cdk-lambda-web-function'
+
+const webFunctionOriginProps: WebFunctionOriginProps = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.connectionAttempts">connectionAttempts</a></code> | <code>number</code> | The number of times that CloudFront attempts to connect to the origin; |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.connectionTimeout">connectionTimeout</a></code> | <code>aws-cdk-lib.Duration</code> | The number of seconds that CloudFront waits when trying to establish a connection to the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.customHeaders">customHeaders</a></code> | <code>{[ key: string ]: string}</code> | A list of HTTP header names and values that CloudFront adds to requests it sends to the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originAccessControlId">originAccessControlId</a></code> | <code>string</code> | The unique identifier of an origin access control for this origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originId">originId</a></code> | <code>string</code> | A unique identifier for the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originShieldEnabled">originShieldEnabled</a></code> | <code>boolean</code> | Origin Shield is enabled by setting originShieldRegion to a valid region, after this to disable Origin Shield again you must set this flag to false. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originShieldRegion">originShieldRegion</a></code> | <code>string</code> | When you enable Origin Shield in the AWS Region that has the lowest latency to your origin, you can get better network performance. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.responseCompletionTimeout">responseCompletionTimeout</a></code> | <code>aws-cdk-lib.Duration</code> | The time that a request from CloudFront to the origin can stay open and wait for a response. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originPath">originPath</a></code> | <code>string</code> | An optional path that CloudFront appends to the origin domain name when CloudFront requests content from the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.ipAddressType">ipAddressType</a></code> | <code>aws-cdk-lib.aws_cloudfront.OriginIpAddressType</code> | Which IP protocol CloudFront uses to connect to the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.keepaliveTimeout">keepaliveTimeout</a></code> | <code>aws-cdk-lib.Duration</code> | How long CloudFront keeps its connection to the origin open. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.readTimeout">readTimeout</a></code> | <code>aws-cdk-lib.Duration</code> | How long CloudFront waits for a response from the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.region">region</a></code> | <code>string</code> | For a `PER_REGION` endpoint: the region whose URL CloudFront calls. |
+
+---
+
+##### `connectionAttempts`<sup>Optional</sup> <a name="connectionAttempts" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.connectionAttempts"></a>
+
+```typescript
+public readonly connectionAttempts: number;
+```
+
+- *Type:* number
+- *Default:* 3
+
+The number of times that CloudFront attempts to connect to the origin;
+
+valid values are 1, 2, or 3 attempts.
+
+---
+
+##### `connectionTimeout`<sup>Optional</sup> <a name="connectionTimeout" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.connectionTimeout"></a>
+
+```typescript
+public readonly connectionTimeout: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* Duration.seconds(10)
+
+The number of seconds that CloudFront waits when trying to establish a connection to the origin.
+
+Valid values are 1-10 seconds, inclusive.
+
+---
+
+##### `customHeaders`<sup>Optional</sup> <a name="customHeaders" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.customHeaders"></a>
+
+```typescript
+public readonly customHeaders: {[ key: string ]: string};
+```
+
+- *Type:* {[ key: string ]: string}
+- *Default:* {}
+
+A list of HTTP header names and values that CloudFront adds to requests it sends to the origin.
+
+---
+
+##### `originAccessControlId`<sup>Optional</sup> <a name="originAccessControlId" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originAccessControlId"></a>
+
+```typescript
+public readonly originAccessControlId: string;
+```
+
+- *Type:* string
+- *Default:* no origin access control
+
+The unique identifier of an origin access control for this origin.
+
+---
+
+##### `originId`<sup>Optional</sup> <a name="originId" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originId"></a>
+
+```typescript
+public readonly originId: string;
+```
+
+- *Type:* string
+- *Default:* an originid will be generated for you
+
+A unique identifier for the origin.
+
+This value must be unique within the distribution.
+
+---
+
+##### `originShieldEnabled`<sup>Optional</sup> <a name="originShieldEnabled" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originShieldEnabled"></a>
+
+```typescript
+public readonly originShieldEnabled: boolean;
+```
+
+- *Type:* boolean
+- *Default:* true
+
+Origin Shield is enabled by setting originShieldRegion to a valid region, after this to disable Origin Shield again you must set this flag to false.
+
+---
+
+##### `originShieldRegion`<sup>Optional</sup> <a name="originShieldRegion" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originShieldRegion"></a>
+
+```typescript
+public readonly originShieldRegion: string;
+```
+
+- *Type:* string
+- *Default:* origin shield not enabled
+
+When you enable Origin Shield in the AWS Region that has the lowest latency to your origin, you can get better network performance.
+
+> [https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html)
+
+---
+
+##### `responseCompletionTimeout`<sup>Optional</sup> <a name="responseCompletionTimeout" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.responseCompletionTimeout"></a>
+
+```typescript
+public readonly responseCompletionTimeout: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* undefined -  AWS CloudFront default is not enforcing a maximum value
+
+The time that a request from CloudFront to the origin can stay open and wait for a response.
+
+If the complete response isn't received from the origin by this time, CloudFront ends the connection.
+
+Valid values are 1-3600 seconds, inclusive.
+
+> [https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#response-completion-timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#response-completion-timeout)
+
+---
+
+##### `originPath`<sup>Optional</sup> <a name="originPath" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.originPath"></a>
+
+```typescript
+public readonly originPath: string;
+```
+
+- *Type:* string
+- *Default:* '/'
+
+An optional path that CloudFront appends to the origin domain name when CloudFront requests content from the origin.
+
+Must begin, but not end, with '/' (e.g., '/production/images').
+
+---
+
+##### `ipAddressType`<sup>Optional</sup> <a name="ipAddressType" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.ipAddressType"></a>
+
+```typescript
+public readonly ipAddressType: OriginIpAddressType;
+```
+
+- *Type:* aws-cdk-lib.aws_cloudfront.OriginIpAddressType
+- *Default:* OriginIpAddressType.IPV4
+
+Which IP protocol CloudFront uses to connect to the origin.
+
+---
+
+##### `keepaliveTimeout`<sup>Optional</sup> <a name="keepaliveTimeout" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.keepaliveTimeout"></a>
+
+```typescript
+public readonly keepaliveTimeout: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* Duration.seconds(5)
+
+How long CloudFront keeps its connection to the origin open.
+
+---
+
+##### `readTimeout`<sup>Optional</sup> <a name="readTimeout" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.readTimeout"></a>
+
+```typescript
+public readonly readTimeout: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* Duration.seconds(30)
+
+How long CloudFront waits for a response from the origin.
+
+Above 120 seconds needs a CloudFront quota increase.
+
+---
+
+##### `region`<sup>Optional</sup> <a name="region" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps.property.region"></a>
+
+```typescript
+public readonly region: string;
+```
+
+- *Type:* string
+- *Default:* the endpoint's home region
+
+For a `PER_REGION` endpoint: the region whose URL CloudFront calls.
+
+Only one region per origin; use an origin
+group or one origin per behavior for more.
+
+---
+
+### WebFunctionOriginWithOacProps <a name="WebFunctionOriginWithOacProps" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps"></a>
+
+Properties for a Web Function endpoint origin with origin access control.
+
+#### Initializer <a name="Initializer" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.Initializer"></a>
+
+```typescript
+import { WebFunctionOriginWithOacProps } from '@ashishpandeyone/cdk-lambda-web-function'
+
+const webFunctionOriginWithOacProps: WebFunctionOriginWithOacProps = { ... }
+```
+
+#### Properties <a name="Properties" id="Properties"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.connectionAttempts">connectionAttempts</a></code> | <code>number</code> | The number of times that CloudFront attempts to connect to the origin; |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.connectionTimeout">connectionTimeout</a></code> | <code>aws-cdk-lib.Duration</code> | The number of seconds that CloudFront waits when trying to establish a connection to the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.customHeaders">customHeaders</a></code> | <code>{[ key: string ]: string}</code> | A list of HTTP header names and values that CloudFront adds to requests it sends to the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originAccessControlId">originAccessControlId</a></code> | <code>string</code> | The unique identifier of an origin access control for this origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originId">originId</a></code> | <code>string</code> | A unique identifier for the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originShieldEnabled">originShieldEnabled</a></code> | <code>boolean</code> | Origin Shield is enabled by setting originShieldRegion to a valid region, after this to disable Origin Shield again you must set this flag to false. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originShieldRegion">originShieldRegion</a></code> | <code>string</code> | When you enable Origin Shield in the AWS Region that has the lowest latency to your origin, you can get better network performance. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.responseCompletionTimeout">responseCompletionTimeout</a></code> | <code>aws-cdk-lib.Duration</code> | The time that a request from CloudFront to the origin can stay open and wait for a response. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originPath">originPath</a></code> | <code>string</code> | An optional path that CloudFront appends to the origin domain name when CloudFront requests content from the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.ipAddressType">ipAddressType</a></code> | <code>aws-cdk-lib.aws_cloudfront.OriginIpAddressType</code> | Which IP protocol CloudFront uses to connect to the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.keepaliveTimeout">keepaliveTimeout</a></code> | <code>aws-cdk-lib.Duration</code> | How long CloudFront keeps its connection to the origin open. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.readTimeout">readTimeout</a></code> | <code>aws-cdk-lib.Duration</code> | How long CloudFront waits for a response from the origin. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.region">region</a></code> | <code>string</code> | For a `PER_REGION` endpoint: the region whose URL CloudFront calls. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originAccessControl">originAccessControl</a></code> | <code>aws-cdk-lib.interfaces.aws_cloudfront.IOriginAccessControlRef</code> | The origin access control. |
+
+---
+
+##### `connectionAttempts`<sup>Optional</sup> <a name="connectionAttempts" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.connectionAttempts"></a>
+
+```typescript
+public readonly connectionAttempts: number;
+```
+
+- *Type:* number
+- *Default:* 3
+
+The number of times that CloudFront attempts to connect to the origin;
+
+valid values are 1, 2, or 3 attempts.
+
+---
+
+##### `connectionTimeout`<sup>Optional</sup> <a name="connectionTimeout" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.connectionTimeout"></a>
+
+```typescript
+public readonly connectionTimeout: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* Duration.seconds(10)
+
+The number of seconds that CloudFront waits when trying to establish a connection to the origin.
+
+Valid values are 1-10 seconds, inclusive.
+
+---
+
+##### `customHeaders`<sup>Optional</sup> <a name="customHeaders" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.customHeaders"></a>
+
+```typescript
+public readonly customHeaders: {[ key: string ]: string};
+```
+
+- *Type:* {[ key: string ]: string}
+- *Default:* {}
+
+A list of HTTP header names and values that CloudFront adds to requests it sends to the origin.
+
+---
+
+##### `originAccessControlId`<sup>Optional</sup> <a name="originAccessControlId" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originAccessControlId"></a>
+
+```typescript
+public readonly originAccessControlId: string;
+```
+
+- *Type:* string
+- *Default:* no origin access control
+
+The unique identifier of an origin access control for this origin.
+
+---
+
+##### `originId`<sup>Optional</sup> <a name="originId" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originId"></a>
+
+```typescript
+public readonly originId: string;
+```
+
+- *Type:* string
+- *Default:* an originid will be generated for you
+
+A unique identifier for the origin.
+
+This value must be unique within the distribution.
+
+---
+
+##### `originShieldEnabled`<sup>Optional</sup> <a name="originShieldEnabled" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originShieldEnabled"></a>
+
+```typescript
+public readonly originShieldEnabled: boolean;
+```
+
+- *Type:* boolean
+- *Default:* true
+
+Origin Shield is enabled by setting originShieldRegion to a valid region, after this to disable Origin Shield again you must set this flag to false.
+
+---
+
+##### `originShieldRegion`<sup>Optional</sup> <a name="originShieldRegion" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originShieldRegion"></a>
+
+```typescript
+public readonly originShieldRegion: string;
+```
+
+- *Type:* string
+- *Default:* origin shield not enabled
+
+When you enable Origin Shield in the AWS Region that has the lowest latency to your origin, you can get better network performance.
+
+> [https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html)
+
+---
+
+##### `responseCompletionTimeout`<sup>Optional</sup> <a name="responseCompletionTimeout" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.responseCompletionTimeout"></a>
+
+```typescript
+public readonly responseCompletionTimeout: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* undefined -  AWS CloudFront default is not enforcing a maximum value
+
+The time that a request from CloudFront to the origin can stay open and wait for a response.
+
+If the complete response isn't received from the origin by this time, CloudFront ends the connection.
+
+Valid values are 1-3600 seconds, inclusive.
+
+> [https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#response-completion-timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#response-completion-timeout)
+
+---
+
+##### `originPath`<sup>Optional</sup> <a name="originPath" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originPath"></a>
+
+```typescript
+public readonly originPath: string;
+```
+
+- *Type:* string
+- *Default:* '/'
+
+An optional path that CloudFront appends to the origin domain name when CloudFront requests content from the origin.
+
+Must begin, but not end, with '/' (e.g., '/production/images').
+
+---
+
+##### `ipAddressType`<sup>Optional</sup> <a name="ipAddressType" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.ipAddressType"></a>
+
+```typescript
+public readonly ipAddressType: OriginIpAddressType;
+```
+
+- *Type:* aws-cdk-lib.aws_cloudfront.OriginIpAddressType
+- *Default:* OriginIpAddressType.IPV4
+
+Which IP protocol CloudFront uses to connect to the origin.
+
+---
+
+##### `keepaliveTimeout`<sup>Optional</sup> <a name="keepaliveTimeout" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.keepaliveTimeout"></a>
+
+```typescript
+public readonly keepaliveTimeout: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* Duration.seconds(5)
+
+How long CloudFront keeps its connection to the origin open.
+
+---
+
+##### `readTimeout`<sup>Optional</sup> <a name="readTimeout" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.readTimeout"></a>
+
+```typescript
+public readonly readTimeout: Duration;
+```
+
+- *Type:* aws-cdk-lib.Duration
+- *Default:* Duration.seconds(30)
+
+How long CloudFront waits for a response from the origin.
+
+Above 120 seconds needs a CloudFront quota increase.
+
+---
+
+##### `region`<sup>Optional</sup> <a name="region" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.region"></a>
+
+```typescript
+public readonly region: string;
+```
+
+- *Type:* string
+- *Default:* the endpoint's home region
+
+For a `PER_REGION` endpoint: the region whose URL CloudFront calls.
+
+Only one region per origin; use an origin
+group or one origin per behavior for more.
+
+---
+
+##### `originAccessControl`<sup>Optional</sup> <a name="originAccessControl" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps.property.originAccessControl"></a>
+
+```typescript
+public readonly originAccessControl: IOriginAccessControlRef;
+```
+
+- *Type:* aws-cdk-lib.interfaces.aws_cloudfront.IOriginAccessControlRef
+- *Default:* one is created per stack and signing protocol
+
+The origin access control.
+
+It must have origin type `lambda`, signing behavior `always-amz-auth`, and signing
+protocol `sigv4` (a regional endpoint) or `sigv4a` (a `MULTI_REGION` endpoint's global domain).
+
+---
+
 ### WebFunctionPermission <a name="WebFunctionPermission" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionPermission"></a>
 
 Permission for a principal outside this account, an AWS service or an organization to call a function's endpoints.
@@ -4359,6 +4852,104 @@ a statement in the function's resource policy (not for an imported function's en
 
 ---
 
+
+
+
+### WebFunctionOrigin <a name="WebFunctionOrigin" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin"></a>
+
+A CloudFront origin for a Web Function endpoint.
+
+Use `WebFunctionOrigin.withOriginAccessControl(endpoint)` for an `AWS_IAM` endpoint: CloudFront signs every request,
+and only your distribution may call the endpoint. `new WebFunctionOrigin(endpoint)` is for a public (`NONE`) endpoint.
+
+#### Initializers <a name="Initializers" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.Initializer"></a>
+
+```typescript
+import { WebFunctionOrigin } from '@ashishpandeyone/cdk-lambda-web-function'
+
+new WebFunctionOrigin(endpoint: WebFunctionEndpoint, props?: WebFunctionOriginProps)
+```
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.Initializer.parameter.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a></code> | *No description.* |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.Initializer.parameter.props">props</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps">WebFunctionOriginProps</a></code> | *No description.* |
+
+---
+
+##### `endpoint`<sup>Required</sup> <a name="endpoint" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.Initializer.parameter.endpoint"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a>
+
+---
+
+##### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.Initializer.parameter.props"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginProps">WebFunctionOriginProps</a>
+
+---
+
+#### Methods <a name="Methods" id="Methods"></a>
+
+| **Name** | **Description** |
+| --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.bind">bind</a></code> | Binds the origin to the associated Distribution. |
+
+---
+
+##### `bind` <a name="bind" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.bind"></a>
+
+```typescript
+public bind(scope: Construct, options: OriginBindOptions): OriginBindConfig
+```
+
+Binds the origin to the associated Distribution.
+
+Can be used to grant permissions, create dependent resources, etc.
+
+###### `scope`<sup>Required</sup> <a name="scope" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.bind.parameter.scope"></a>
+
+- *Type:* constructs.Construct
+
+---
+
+###### `options`<sup>Required</sup> <a name="options" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.bind.parameter.options"></a>
+
+- *Type:* aws-cdk-lib.aws_cloudfront.OriginBindOptions
+
+---
+
+#### Static Functions <a name="Static Functions" id="Static Functions"></a>
+
+| **Name** | **Description** |
+| --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.withOriginAccessControl">withOriginAccessControl</a></code> | An origin for an `AWS_IAM` endpoint, with origin access control: CloudFront signs every request to the endpoint (`always-amz-auth`, which keeps the viewer's `Authorization` header for your application), and the function's resource policy allows `cloudfront.amazonaws.com` to call this endpoint on behalf of this distribution only. |
+
+---
+
+##### `withOriginAccessControl` <a name="withOriginAccessControl" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.withOriginAccessControl"></a>
+
+```typescript
+import { WebFunctionOrigin } from '@ashishpandeyone/cdk-lambda-web-function'
+
+WebFunctionOrigin.withOriginAccessControl(endpoint: WebFunctionEndpoint, props?: WebFunctionOriginWithOacProps)
+```
+
+An origin for an `AWS_IAM` endpoint, with origin access control: CloudFront signs every request to the endpoint (`always-amz-auth`, which keeps the viewer's `Authorization` header for your application), and the function's resource policy allows `cloudfront.amazonaws.com` to call this endpoint on behalf of this distribution only.
+
+The distribution must be in the function's stack.
+
+###### `endpoint`<sup>Required</sup> <a name="endpoint" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.withOriginAccessControl.parameter.endpoint"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpoint">WebFunctionEndpoint</a>
+
+---
+
+###### `props`<sup>Optional</sup> <a name="props" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.withOriginAccessControl.parameter.props"></a>
+
+- *Type:* <a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOriginWithOacProps">WebFunctionOriginWithOacProps</a>
+
+---
 
 
 

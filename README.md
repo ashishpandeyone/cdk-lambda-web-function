@@ -191,6 +191,45 @@ fn.addPermission('Cdn', {
 - **Scope AWS services to your resource.** Lambda accepts a service principal with no condition, which would let that service call the endpoint on behalf of any account. The construct warns unless you give `sourceArn` or `sourceAccount` (or an `aws:SourceArn`, `aws:SourceAccount`, `aws:SourceOrgID` or `aws:SourceOrgPaths` condition).
 - Lambda copies the policy to every region the function's endpoints serve from. The copy is eventually consistent, and in tests changes applied in every region within seconds.
 
+### CloudFront
+
+Put a CloudFront distribution (`aws-cdk-lib/aws-cloudfront`) in front of an `AWS_IAM` endpoint to serve the public with a custom domain, caching and AWS WAF. Viewers don't sign anything, and only your distribution may call the endpoint:
+
+```ts
+new cloudfront.Distribution(this, 'Cdn', {
+  defaultBehavior: {
+    origin: WebFunctionOrigin.withOriginAccessControl(fn.endpoint),
+    viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+    allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+    cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+    originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+  },
+});
+```
+
+`withOriginAccessControl` adds:
+- an origin access control (origin type `lambda`, signing behavior `always-amz-auth`, the only one CloudFront accepts for Web Function origins), one per stack and signing protocol: SigV4 for a regional domain, SigV4a for a `MULTI_REGION` endpoint's global domain;
+- a statement in the function's resource policy that allows `cloudfront.amazonaws.com` to call this endpoint on behalf of this distribution only (`aws:SourceArn`).
+
+Some things to know:
+- **Forward everything except `Host`.** The endpoint answers 404 when `Host` is the distribution's domain, so use `ALL_VIEWER_EXCEPT_HOST_HEADER` (not `ALL_VIEWER`), or a policy of your own without `Host`.
+- **Your application can still authenticate viewers.** CloudFront signs in its own headers and passes the viewer's `Authorization` header (a JWT, for example) through unchanged, but only when `Authorization` is in the cache policy. CloudFront drops it from `GET` and `HEAD` requests otherwise:
+
+  ```ts
+  const forwardAuthorization = new cloudfront.CachePolicy(this, 'ForwardAuthorization', {
+    headerBehavior: cloudfront.CacheHeaderBehavior.allowList('Authorization'),
+    minTtl: Duration.seconds(0),
+    defaultTtl: Duration.seconds(0),
+    maxTtl: Duration.seconds(1), // a cache key with headers needs caching enabled; 0/0/1 keeps it off in practice
+  });
+  ```
+- Request bodies work without clients sending `x-amz-content-sha256`: CloudFront signs `POST`, `PUT` and `PATCH` requests with an unsigned payload.
+- A `PER_REGION` endpoint's origin calls one region: the home region, or the one you pass as `region`. Use one origin per region, for example in an origin group.
+- A `MULTI_REGION` endpoint can't include opt-in regions (such as `me-central-1`), because CloudFront can't sign for them. The construct fails synthesis.
+- The distribution must be in the function's stack. Lambda@Edge origin-request and origin-response triggers aren't supported on behaviors with this origin.
+- The endpoint stays reachable at its own domain for signed requests your policies allow. Until a new distribution finishes deploying, requests through it can get a transient 403.
+- `new WebFunctionOrigin(endpoint)` is for a public (`NONE`) endpoint, for example behind AWS WAF. Lambda doesn't authenticate those requests, so the endpoint's own domain stays public too.
+
 ### Functions defined elsewhere
 
 Import a Web Function defined in another stack or app to grant access to it, read its metrics, or reference its revisions:
@@ -421,7 +460,7 @@ new WebFunction(this, 'Api', {
 
 ## Limitations
 
-- Not yet supported: VPC access (network connectors), KMS encryption, tracing, and a CloudFront origin.
+- Not yet supported: VPC access (network connectors), KMS encryption, and tracing.
 - **Hotswap skips Web Functions without a warning.** `cdk deploy --hotswap` and `cdk watch`, which hotswaps by default, report `(no changes)` for a code or configuration change and the endpoint keeps serving the old revision. Use `cdk watch --hotswap-fallback` (or `cdk deploy --hotswap-fallback`): it deploys Web Function changes through CloudFormation, in about 40 seconds for a home-region endpoint.
 - Fixed limits: 512 MB of code (unzipped) and 32 KB of environment variables per revision, 512 MB of `/tmp` per execution environment, and 128 KiB of headers per request.
 - Quotas: 10 endpoints and about 50 revisions per function (Lambda cleans up older revisions automatically), and 10,000 requests per second per endpoint. Per account and region: 100,000 requests per second and 2,000 Arm64 vCPUs (each execution environment uses 2). The account quotas are adjustable, and new accounts start lower. See [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).

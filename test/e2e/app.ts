@@ -6,16 +6,20 @@
  * stable (revision ID for a Stable endpoint), split (revision ID that keeps 50% of the default endpoint),
  * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint;
  * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500),
- * permissions (on: a caller allowed by the resource policy alone, plus CloudFront statements; none: the caller role without them).
+ * permissions (on: a caller allowed by the resource policy alone, plus CloudFront statements; none: the caller role without them),
+ * cdn (true: a CloudFront distribution with WebFunctionOrigin: / → the default PER_REGION endpoint in us-east-1, /home/* → its
+ * home region, /global/* → a MULTI_REGION endpoint).
  */
 import * as path from 'node:path';
 import { App, CfnOutput, CfnResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import {
-  NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionDeployment, WebFunctionEndpointType, WebFunctionRevision, type WebFunctionOptions,
+  NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionDeployment, WebFunctionEndpointType, WebFunctionOrigin, WebFunctionRevision,
+  type WebFunctionOptions,
 } from '../../src';
 
 export const HOME_REGION = 'ap-south-1';
@@ -123,6 +127,34 @@ if (forcedErrors) {
 }
 
 if (rollbackOn) out('HomeRollbackAlarm', fn.endpoint.rollbackAlarms[0].alarmName);
+
+if (ctx('cdn') === 'true') {
+  const global = fn.addEndpoint('Global', {
+    authType: WebFunctionAuthType.AWS_IAM, endpointType: WebFunctionEndpointType.MULTI_REGION, regions: ['us-east-1'],
+  });
+  const forwardAuthorization = new cloudfront.CachePolicy(stack, 'ForwardAuthorization', {
+    headerBehavior: cloudfront.CacheHeaderBehavior.allowList('Authorization'),
+    minTtl: Duration.seconds(0),
+    defaultTtl: Duration.seconds(0),
+    maxTtl: Duration.seconds(1),
+  });
+  const behavior = (origin: cloudfront.IOrigin): cloudfront.BehaviorOptions => ({
+    origin,
+    viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+    allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+    cachePolicy: forwardAuthorization,
+    originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
+  });
+  const cdn = new cloudfront.Distribution(stack, 'Cdn', {
+    defaultBehavior: behavior(WebFunctionOrigin.withOriginAccessControl(fn.endpoint, { region: 'us-east-1' })),
+    additionalBehaviors: {
+      '/home/*': behavior(WebFunctionOrigin.withOriginAccessControl(fn.endpoint)),
+      '/global/*': behavior(WebFunctionOrigin.withOriginAccessControl(global)),
+    },
+  });
+  out('CdnUrl', `https://${cdn.distributionDomainName}`);
+  out('GlobalUrl', global.url);
+}
 
 // A caller with no IAM policy of its own, allowed by the function's resource policy only (same account).
 const permissions = ctx('permissions');
