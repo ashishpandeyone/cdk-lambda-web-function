@@ -4227,7 +4227,9 @@ public readonly originAccessControl: IOriginAccessControlRef;
 The origin access control.
 
 It must have origin type `lambda`, signing behavior `always-amz-auth`, and signing
-protocol `sigv4` (a regional endpoint) or `sigv4a` (a `MULTI_REGION` endpoint's global domain).
+protocol `sigv4` (a regional endpoint) or `sigv4a` (a `MULTI_REGION` endpoint's global domain). Checked at
+synthesis when it's defined in this app (CDK's `FunctionUrlOriginAccessControl` signs with `always`, which
+CloudFront rejects for Web Function origins).
 
 ---
 

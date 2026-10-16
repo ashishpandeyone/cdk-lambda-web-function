@@ -1,9 +1,12 @@
 import * as path from 'node:path';
-import { App, Duration, Stack } from 'aws-cdk-lib';
+import { App, Duration, Names, Stack } from 'aws-cdk-lib';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import { WebFunction, WebFunctionAuthType, WebFunctionEndpointType, WebFunctionOrigin, type WebFunctionProps } from '../src';
+import {
+  WebFunction, WebFunctionAuthType, WebFunctionEndpointType, WebFunctionOrigin,
+  type WebFunctionEndpoint, type WebFunctionOriginProps, type WebFunctionProps,
+} from '../src';
 
 const code = () => lambda.Code.fromAsset(path.join(__dirname, 'fixtures', 'hello'));
 const env = { account: '111111111111', region: 'ap-south-1' };
@@ -115,9 +118,115 @@ describe('WebFunctionOrigin.withOriginAccessControl', () => {
     expect(origins(t)[0].CustomOriginConfig.OriginReadTimeout).toBe(60);
   });
 
-  test('timeouts are whole seconds, at least 1', () => {
-    const { fn } = make();
-    expect(() => WebFunctionOrigin.withOriginAccessControl(fn.endpoint, { readTimeout: Duration.seconds(0) })).toThrow(/readTimeout must be a whole number of seconds/);
+  test('renders the origin exactly (bound directly, as CDK\'s origin tests do)', () => {
+    const { fn, stack } = make();
+    const config = WebFunctionOrigin.withOriginAccessControl(fn.endpoint).bind(stack, { originId: 'StackOrigin', distributionId: 'DIST' });
+    expect(stack.resolve(config.originProperty)).toEqual({
+      id: 'StackOrigin',
+      domainName: { 'Fn::GetAtt': [expect.stringMatching(/^ApiEndpoint/), 'DomainName'] },
+      customOriginConfig: { originProtocolPolicy: 'https-only', originSslProtocols: ['TLSv1.2'] },
+      originAccessControlId: { Ref: 'WebFunctionOriginAccessControlSigV4' },
+    });
+  });
+
+  test('passes the standard origin properties through', () => {
+    const { fn, stack } = make();
+    const origin = WebFunctionOrigin.withOriginAccessControl(fn.endpoint, {
+      originId: 'Custom',
+      originPath: '/app',
+      connectionTimeout: Duration.seconds(5),
+      connectionAttempts: 2,
+      customHeaders: { 'x-origin': 'cdn' },
+      originShieldRegion: 'ap-south-1',
+      responseCompletionTimeout: Duration.seconds(90),
+      readTimeout: Duration.seconds(60),
+      keepaliveTimeout: Duration.seconds(10),
+    });
+    expect(stack.resolve(origin.bind(stack, { originId: 'StackOrigin', distributionId: 'DIST' }).originProperty)).toEqual({
+      id: 'Custom',
+      domainName: expect.anything(),
+      originPath: '/app',
+      connectionTimeout: 5,
+      connectionAttempts: 2,
+      originCustomHeaders: [{ headerName: 'x-origin', headerValue: 'cdn' }],
+      originShield: { enabled: true, originShieldRegion: 'ap-south-1' },
+      responseCompletionTimeout: 90,
+      customOriginConfig: {
+        originProtocolPolicy: 'https-only', originSslProtocols: ['TLSv1.2'], originReadTimeout: 60, originKeepaliveTimeout: 10,
+      },
+      originAccessControlId: expect.anything(),
+    });
+  });
+
+  test('needs a distribution ID to scope the resource policy', () => {
+    const { fn, stack } = make();
+    expect(() => WebFunctionOrigin.withOriginAccessControl(fn.endpoint).bind(stack, { originId: 'StackOrigin' }))
+      .toThrow(/must be used by a cloudfront.Distribution/);
+  });
+
+  test('the generated origin access control name is unique in the account', () => {
+    const { fn, stack, template } = make();
+    distribution(stack, WebFunctionOrigin.withOriginAccessControl(fn.endpoint));
+    const t = template();
+    const oac = stack.node.findChild('WebFunctionOriginAccessControlSigV4');
+    expect(oacs(t)[0].Name).toBe(Names.uniqueResourceName(oac, { maxLength: 64 }));
+  });
+
+  test('in an environment-agnostic stack, the distribution ARN uses the deploy-time account', () => {
+    const stack = new Stack(new App(), 'Stack');
+    const fn = new WebFunction(stack, 'Api', { runtime: lambda.Runtime.NODEJS_24_X, code: code(), authType: WebFunctionAuthType.AWS_IAM });
+    distribution(stack, WebFunctionOrigin.withOriginAccessControl(fn.endpoint));
+    expect(policyStatements(Template.fromStack(stack))[0].Condition.StringEquals['aws:SourceArn']).toEqual({
+      'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':cloudfront::', { Ref: 'AWS::AccountId' }, ':distribution/', { Ref: expect.stringMatching(/^Cdn/) }]],
+    });
+  });
+
+  test('rejects a given origin access control with settings CloudFront refuses for Web Function origins', () => {
+    const { fn, stack } = make({ endpoint: { endpointType: WebFunctionEndpointType.MULTI_REGION, regions: ['us-east-1'] } });
+    const home = fn.addEndpoint('Home', { authType: WebFunctionAuthType.AWS_IAM });
+    // CDK's own Lambda OAC signs with 'always'.
+    const l2 = new cloudfront.FunctionUrlOriginAccessControl(stack, 'FunctionUrlOac');
+    expect(() => WebFunctionOrigin.withOriginAccessControl(home, { originAccessControl: l2 }))
+      .toThrow(/FunctionUrlOac must have SigningBehavior 'always-amz-auth' for this endpoint/);
+    // The global domain needs SigV4a.
+    const sigv4 = new cloudfront.CfnOriginAccessControl(stack, 'SigV4', {
+      originAccessControlConfig: { name: 'v4', originAccessControlOriginType: 'lambda', signingBehavior: 'always-amz-auth', signingProtocol: 'sigv4' },
+    });
+    expect(() => WebFunctionOrigin.withOriginAccessControl(fn.endpoint, { originAccessControl: sigv4 })).toThrow(/must have SigningProtocol 'sigv4a'/);
+    expect(() => WebFunctionOrigin.withOriginAccessControl(home, { originAccessControl: sigv4 })).not.toThrow();
+    // An imported one can't be checked.
+    const imported = cloudfront.FunctionUrlOriginAccessControl.fromOriginAccessControlId(stack, 'Imported', 'E2QWRUHAPOMQZL');
+    expect(() => WebFunctionOrigin.withOriginAccessControl(home, { originAccessControl: imported })).not.toThrow();
+  });
+
+  test.each([cloudfront.OriginIpAddressType.IPV4, cloudfront.OriginIpAddressType.IPV6, cloudfront.OriginIpAddressType.DUALSTACK])('ipAddressType %s', (ipAddressType) => {
+    const { fn, stack, template } = make();
+    distribution(stack, WebFunctionOrigin.withOriginAccessControl(fn.endpoint, { ipAddressType }));
+    expect(origins(template())[0].CustomOriginConfig.IpAddressType).toBe(ipAddressType);
+  });
+});
+
+// Both construction paths validate their props, like CDK's FunctionUrlOrigin.
+const factories: Array<[string, WebFunctionAuthType, (e: WebFunctionEndpoint, p: WebFunctionOriginProps) => unknown]> = [
+  ['new WebFunctionOrigin', WebFunctionAuthType.NONE, (e, p) => new WebFunctionOrigin(e, p)],
+  ['WebFunctionOrigin.withOriginAccessControl', WebFunctionAuthType.AWS_IAM, (e, p) => WebFunctionOrigin.withOriginAccessControl(e, p)],
+];
+
+describe.each(factories)('%s: timeouts', (_name, authType, create) => {
+  const endpoint = () => make({ authType }).fn.endpoint;
+
+  test.each(['readTimeout', 'keepaliveTimeout'] as const)('%s is at least 1 second', (prop) => {
+    expect(() => create(endpoint(), { [prop]: Duration.seconds(0) })).toThrow(new RegExp(`${prop} must be a whole number of seconds, at least 1, got 0`));
+  });
+
+  test('values above the default quotas are left for CloudFront to check', () => {
+    expect(() => create(endpoint(), { readTimeout: Duration.minutes(5), keepaliveTimeout: Duration.minutes(10) })).not.toThrow();
+  });
+
+  test('responseCompletionTimeout can\'t be shorter than readTimeout', () => {
+    expect(() => create(endpoint(), { readTimeout: Duration.seconds(60), responseCompletionTimeout: Duration.seconds(30) }))
+      .toThrow('responseCompletionTimeout must be equal to or greater than readTimeout (60s), got: 30s.');
+    expect(() => create(endpoint(), { readTimeout: Duration.seconds(60), responseCompletionTimeout: Duration.seconds(60) })).not.toThrow();
   });
 });
 
