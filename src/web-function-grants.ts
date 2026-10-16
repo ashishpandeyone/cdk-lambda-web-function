@@ -2,7 +2,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import type { WebFunctionEndpoint } from './web-function-endpoint';
 
 /**
- * Grants on a Web Function. Access it as `fn.grants`.
+ * Grants on a Web Function endpoint. Access them as `fn.grants` (the default endpoint) or `endpoint.grants`.
  */
 export class WebFunctionGrants {
   /**
@@ -15,7 +15,7 @@ export class WebFunctionGrants {
   private constructor(private readonly endpoint: WebFunctionEndpoint) {}
 
   /**
-   * Allows `grantee` to call the function's endpoint (`lambda:InvokeWebFunctionEndpoint`).
+   * Allows `grantee` to call the endpoint (`lambda:InvokeWebFunctionEndpoint`).
    *
    * The grant is on the endpoint's home-region ARN, which IAM evaluates for every region the
    * endpoint serves from, including a MULTI_REGION global URL.

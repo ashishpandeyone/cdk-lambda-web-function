@@ -2,7 +2,8 @@ import type { CloudFormationCustomResourceEvent } from 'aws-lambda';
 import { handleCode } from './code';
 import { handleEndpointLookup } from './endpoint-lookup';
 import { handleLogGroup } from './log-group';
-import { CODE_RESOURCE_TYPE, ENDPOINT_LOOKUP_RESOURCE_TYPE, LOG_GROUP_RESOURCE_TYPE } from '../../src/private/provider-protocol';
+import { handleRevisionCleanup } from './revision-cleanup';
+import { CODE_RESOURCE_TYPE, ENDPOINT_LOOKUP_RESOURCE_TYPE, LOG_GROUP_RESOURCE_TYPE, REVISION_CLEANUP_RESOURCE_TYPE } from '../../src/private/provider-protocol';
 
 export interface HandlerResponse {
   readonly PhysicalResourceId: string;
@@ -18,6 +19,8 @@ export async function handler(event: CloudFormationCustomResourceEvent): Promise
       return handleLogGroup(event);
     case ENDPOINT_LOOKUP_RESOURCE_TYPE:
       return handleEndpointLookup(event);
+    case REVISION_CLEANUP_RESOURCE_TYPE:
+      return handleRevisionCleanup(event);
     default:
       throw new Error(`Unsupported resource type: ${event.ResourceType}`);
   }

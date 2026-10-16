@@ -6,9 +6,14 @@ import { Construct } from 'constructs';
 import { WebFunctionAuthType } from './enums';
 import { WebFunctionCode } from './private/code';
 import { WebFunctionLogGroup } from './private/log-group';
+import { RevisionCleanup } from './private/revision-cleanup';
 import { CFN_VALIDATE_UNKNOWN_TYPE, assertResourceName } from './private/validation';
-import { WebFunctionEndpoint, type WebFunctionEndpointOptions } from './web-function-endpoint';
+import { WebFunctionEndpoint, type AddWebFunctionEndpointOptions, type WebFunctionEndpointOptions } from './web-function-endpoint';
 import { WebFunctionGrants } from './web-function-grants';
+import { WebFunctionRevision, type IWebFunctionRevision } from './web-function-revision';
+
+/** Endpoints per function (service quota, not adjustable). */
+const MAX_ENDPOINTS = 10;
 
 /**
  * Options shared by `WebFunction` and `NodejsWebFunction`: everything except how the code is supplied.
@@ -20,11 +25,25 @@ export interface WebFunctionOptions {
   readonly authType: WebFunctionAuthType;
 
   /**
-   * The endpoint: where it serves from, and its name.
+   * The default endpoint (`fn.endpoint`): where it serves from, its name and limits.
+   * It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`.
+   * Add more endpoints with `addEndpoint`.
    *
-   * @default - a HOME_REGION endpoint
+   * @default - a HOME_REGION endpoint serving the current revision
    */
   readonly endpoint?: WebFunctionEndpointOptions;
+
+  /**
+   * How many of the newest revisions to keep (1-50). Each deployment that changes the code or
+   * configuration creates a revision; older ones stay available to roll back to or route traffic to,
+   * and the oldest beyond this count are deleted after each deployment.
+   *
+   * Revisions that an endpoint routes to are never deleted, and neither are those the previous
+   * deployment used (a rollback returns to them).
+   *
+   * @default 20
+   */
+  readonly revisionRetention?: number;
 
   /**
    * The function's name. Renaming a function replaces it, and its endpoint gets a new URL.
@@ -150,8 +169,9 @@ export interface IWebFunction extends IResource, lambda.IWebFunctionRef {
 /**
  * A Node.js HTTP server running as an AWS Lambda Web Function, served from one or more regions.
  *
- * Creates the function, its current revision (code and configuration; any change replaces it),
- * an HTTPS endpoint, an execution role, and owns the function's log groups in every region.
+ * Creates the function, its current revision (code and configuration; any change creates a new one,
+ * and the newest `revisionRetention` are kept), a default HTTPS endpoint, an execution role, and owns
+ * the function's log groups in every region its endpoints serve from.
  *
  * Importing existing functions (`fromXxx` methods) is planned after 0.1.
  *
@@ -161,13 +181,16 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
   public readonly webFunctionName: string;
   public readonly webFunctionArn: string;
 
-  /** The ID of the current revision. */
+  /** The ID of the current revision. Same as `currentRevision.revisionId`. */
   public readonly revisionId: string;
 
-  /** The function's endpoint. */
+  /** The revision built from the current code and configuration. */
+  public readonly currentRevision: IWebFunctionRevision;
+
+  /** The default endpoint. Add more with `addEndpoint`. */
   public readonly endpoint: WebFunctionEndpoint;
 
-  /** Grants on the function (e.g. `grants.invoke(principal)`). */
+  /** Grants on the default endpoint (e.g. `grants.invoke(principal)`). Other endpoints have their own `grants`. */
   public readonly grants: WebFunctionGrants;
 
   /** The execution role. */
@@ -183,6 +206,12 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
   public readonly logGroup: logs.ILogGroup;
 
   private readonly environment: { [key: string]: string } = {};
+  private readonly endpoints: WebFunctionEndpoint[] = [];
+  private readonly remoteLogGroups = new Map<string, WebFunctionLogGroup>();
+  private readonly logGroupName: string;
+  private readonly logOptions: Pick<WebFunctionProps, 'logRetention' | 'logRemovalPolicy'>;
+  private readonly resource: lambda.CfnWebFunction;
+  private readonly revisionCleanup: RevisionCleanup;
 
   /** A reference to this function, for APIs that accept `lambda.IWebFunctionRef`. */
   public get webFunctionRef(): lambda.WebFunctionReference {
@@ -203,6 +232,10 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
     const validConcurrency = (n: number) => Number.isInteger(n) && n >= 1 && n <= 128;
     if (maxConcurrency !== undefined && !Token.isUnresolved(maxConcurrency) && !validConcurrency(maxConcurrency)) {
       throw new Error(`${this.node.path}: maxConcurrencyPerEnvironment must be an integer from 1 to 128, got ${maxConcurrency}`);
+    }
+    const revisionRetention = props.revisionRetention ?? 20;
+    if (!Token.isUnresolved(revisionRetention) && (!Number.isInteger(revisionRetention) || revisionRetention < 1 || revisionRetention > 50)) {
+      throw new Error(`${this.node.path}: revisionRetention must be an integer from 1 to 50, got ${revisionRetention}`);
     }
     const systemLogLevels = [lambda.SystemLogLevel.DEBUG, lambda.SystemLogLevel.INFO, lambda.SystemLogLevel.WARN];
     if (props.systemLogLevelV2 !== undefined && !systemLogLevels.includes(props.systemLogLevelV2)) {
@@ -227,7 +260,9 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
 
     // Log groups first: the service would otherwise create them without retention.
     const logGroupName = `/aws/lambda/web/${this.webFunctionName}`;
-    const logGroups = this.createLogGroups(logGroupName, props);
+    this.logGroupName = logGroupName;
+    this.logOptions = { logRetention: props.logRetention, logRemovalPolicy: props.logRemovalPolicy };
+    const logGroups = this.createLogGroups(logGroupName);
     this.logGroup = logs.LogGroup.fromLogGroupName(this, 'LogGroup', logGroupName);
 
     const code = new WebFunctionCode(this, 'Code', props.code).location;
@@ -236,6 +271,7 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
     // The function is deleted before its log groups, which then wait for late flushes.
     for (const group of logGroups) fn.node.addDependency(group.resource);
     Validations.of(fn).acknowledge(CFN_VALIDATE_UNKNOWN_TYPE);
+    this.resource = fn;
     this.webFunctionArn = fn.attrFunctionArn;
 
     const revision = new lambda.CfnWebFunctionRevision(this, 'Revision', {
@@ -262,20 +298,31 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
     // Wait for the role's policies, so the first environment starts with its permissions.
     revision.node.addDependency(this.role);
     Validations.of(revision).acknowledge(CFN_VALIDATE_UNKNOWN_TYPE);
+    // Replaced revisions stay as rollback targets; RevisionCleanup deletes the oldest. Deleting the function deletes them all.
+    revision.applyRemovalPolicy(RemovalPolicy.RETAIN);
     this.revisionId = revision.attrRevisionId;
+    this.currentRevision = WebFunctionRevision._current(this, 'CurrentRevision', this, revision.attrRevisionId, revision.attrRevisionArn);
 
-    this.endpoint = WebFunctionEndpoint._create(this, 'Endpoint', {
-      ...props.endpoint,
+    this.revisionCleanup = new RevisionCleanup(this, 'RevisionCleanup', {
       functionName: this.webFunctionName,
       functionArn: fn.attrFunctionArn,
-      revisionId: revision.attrRevisionId,
-      authType: props.authType,
+      keep: revisionRetention,
+      revisionIds: () => [this.currentRevision.revisionId, ...this.endpoints.flatMap((e) => e._revisionIds())],
     });
 
-    this.grants = WebFunctionGrants._forEndpoint(this.endpoint);
+    this.endpoint = this.createEndpoint('Endpoint', { ...props.endpoint, authType: props.authType }, 'default');
+    this.grants = this.endpoint.grants;
+  }
 
-    // Remote regions' .local groups can only be created once the regions are known.
-    for (const group of this.createRemoteLogGroups(logGroupName, props)) fn.node.addDependency(group.resource);
+  /**
+   * Adds an endpoint (up to 10 per function), e.g. a public one next to an IAM-only one, or one pinned to an
+   * earlier revision. Each endpoint has its own URL, authentication, regions and limits.
+   *
+   * @param id the endpoint's construct ID, also used in its generated name (`<id>-<hash>`)
+   */
+  public addEndpoint(id: string, options: AddWebFunctionEndpointOptions): WebFunctionEndpoint {
+    const prefix = id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 55).replace(/-+$/, '') || 'endpoint';
+    return this.createEndpoint(id, options, prefix, id);
   }
 
   /**
@@ -304,24 +351,48 @@ export class WebFunction extends Resource implements IWebFunction, iam.IGrantabl
     return this.grants.invoke(grantee);
   }
 
-  private createLogGroups(logGroupName: string, props: WebFunctionProps): WebFunctionLogGroup[] {
+  private createEndpoint(id: string, options: AddWebFunctionEndpointOptions, namePrefix: string, nameSeed?: string): WebFunctionEndpoint {
+    if (this.endpoints.length >= MAX_ENDPOINTS) {
+      throw new Error(`${this.node.path}: a Web Function can have at most ${MAX_ENDPOINTS} endpoints`);
+    }
+    const endpoint = WebFunctionEndpoint._create(this, id, {
+      ...options,
+      webFunction: this,
+      currentRevision: this.currentRevision,
+      namePrefix,
+      nameSeed,
+    });
+    const clash = this.endpoints.find((e) => !Token.isUnresolved(e.endpointName) && e.endpointName === endpoint.endpointName);
+    if (clash) {
+      throw new Error(`${endpoint.node.path}: endpointName '${endpoint.endpointName}' is already used by ${clash.node.path}`);
+    }
+    this.endpoints.push(endpoint);
+    // Revisions an endpoint stops routing to only become deletable once it's updated.
+    this.revisionCleanup.node.addDependency(endpoint);
+    // Each serving region's .local group must exist before traffic, and outlive the function.
+    for (const region of endpoint.regions.slice(1)) {
+      if (this.remoteLogGroups.has(region)) continue;
+      const group = this.logGroupIn(`LocalLogs-${region}`, region, `${this.logGroupName}.local`);
+      this.remoteLogGroups.set(region, group);
+      this.resource.node.addDependency(group.resource);
+    }
+    return endpoint;
+  }
+
+  private createLogGroups(logGroupName: string): WebFunctionLogGroup[] {
     const home = Stack.of(this).region;
     return [
-      this.logGroupIn('Logs', home, logGroupName, props),
-      this.logGroupIn('LocalLogs', home, `${logGroupName}.local`, props),
+      this.logGroupIn('Logs', home, logGroupName),
+      this.logGroupIn('LocalLogs', home, `${logGroupName}.local`),
     ];
   }
 
-  private createRemoteLogGroups(logGroupName: string, props: WebFunctionProps): WebFunctionLogGroup[] {
-    return this.endpoint.regions.slice(1).map((region) => this.logGroupIn(`LocalLogs-${region}`, region, `${logGroupName}.local`, props));
-  }
-
-  private logGroupIn(id: string, region: string, name: string, props: WebFunctionProps): WebFunctionLogGroup {
+  private logGroupIn(id: string, region: string, name: string): WebFunctionLogGroup {
     return new WebFunctionLogGroup(this, id, {
       region,
       logGroupName: name,
-      retention: props.logRetention ?? logs.RetentionDays.ONE_MONTH,
-      removalPolicy: props.logRemovalPolicy ?? RemovalPolicy.RETAIN,
+      retention: this.logOptions.logRetention ?? logs.RetentionDays.ONE_MONTH,
+      removalPolicy: this.logOptions.logRemovalPolicy ?? RemovalPolicy.RETAIN,
     });
   }
 }

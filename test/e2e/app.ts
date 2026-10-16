@@ -1,30 +1,34 @@
 /**
  * CDK app for the live end-to-end tests (see run.ts). Built from the library source.
  * Context: scenario, endpointType (HOME_REGION | MULTI_REGION | PER_REGION), regions (JSON), auth (AWS_IAM | NONE), version (v1 | v2),
- * kind (web | nodejs: NodejsWebFunction bundling test/fixtures/nodejs/server.ts), bundling (local | docker: forceDockerBundling).
+ * kind (web | nodejs: NodejsWebFunction bundling test/fixtures/nodejs/server.ts), bundling (local | docker: forceDockerBundling),
+ * appVersion (APP_VERSION, default: version), retention (revisionRetention), endpoints (many: adds Public and Global endpoints),
+ * stable (revision ID for a Stable endpoint), split (revision ID that keeps 50% of the default endpoint).
  */
 import * as path from 'node:path';
 import { App, CfnOutput, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionEndpointType, type WebFunctionOptions } from '../../src';
+import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionEndpointType, WebFunctionRevision, type WebFunctionOptions } from '../../src';
 
 export const HOME_REGION = 'ap-south-1';
 
 const app = new App();
-const ctx = (key: string, fallback?: string): string => app.node.tryGetContext(key) ?? fallback;
+const ctx = (key: string, fallback?: string): string | undefined => app.node.tryGetContext(key) ?? fallback;
 const scenario = ctx('scenario');
 const endpointType = WebFunctionEndpointType[ctx('endpointType', 'HOME_REGION') as keyof typeof WebFunctionEndpointType];
-const regions: string[] = JSON.parse(ctx('regions', '[]'));
-const version = ctx('version', 'v1');
+const regions: string[] = JSON.parse(ctx('regions', '[]')!);
+const version = ctx('version', 'v1')!;
+const retention = ctx('retention');
 
 const stack = new Stack(app, `WebFnE2E-${scenario}`, { env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: HOME_REGION } });
 
 const options: WebFunctionOptions = {
   authType: WebFunctionAuthType[ctx('auth', 'AWS_IAM') as keyof typeof WebFunctionAuthType],
   endpoint: { endpointType, regions },
-  environment: { APP_VERSION: version },
+  environment: { APP_VERSION: ctx('appVersion', version)! },
+  revisionRetention: retention ? Number(retention) : undefined,
   logRetention: logs.RetentionDays.ONE_WEEK,
   logRemovalPolicy: RemovalPolicy.DESTROY,
 };
@@ -56,4 +60,26 @@ out('ConsumerRoleArn', consumer.roleArn);
 out('OutsiderRoleArn', outsider.roleArn);
 if (endpointType === WebFunctionEndpointType.PER_REGION) {
   for (const region of fn.endpoint.regions) out(`Url${region.replace(/-/g, '')}`, fn.endpoint.regionalUrl(region));
+}
+
+if (ctx('endpoints') === 'many') {
+  const pub = fn.addEndpoint('Public', { authType: WebFunctionAuthType.NONE, rateLimit: 100, description: 'public' });
+  const global = fn.addEndpoint('Global', {
+    authType: WebFunctionAuthType.AWS_IAM, endpointType: WebFunctionEndpointType.MULTI_REGION, regions: ['us-east-1'], maxEnvironments: 4,
+  });
+  global.grantInvoke(consumer);
+  out('PublicUrl', pub.url);
+  out('GlobalUrl', global.url);
+  out('GlobalEndpointName', global.endpointName);
+
+  const stable = ctx('stable');
+  if (stable) {
+    const revision = WebFunctionRevision.fromRevisionAttributes(stack, 'StableRevision', { webFunction: fn, revisionId: stable });
+    out('StableUrl', fn.addEndpoint('Stable', { authType: WebFunctionAuthType.NONE, revision }).url);
+  }
+  const split = ctx('split');
+  if (split) {
+    const previous = WebFunctionRevision.fromRevisionAttributes(stack, 'SplitRevision', { webFunction: fn, revisionId: split });
+    fn.endpoint.routeTraffic(previous, [{ revision: fn.currentRevision, weight: 0.5 }]);
+  }
 }

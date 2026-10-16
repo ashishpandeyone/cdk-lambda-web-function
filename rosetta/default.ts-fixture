@@ -6,7 +6,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionEndpointType } from '@ashishpandeyone/cdk-lambda-web-function';
+import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionEndpointType, WebFunctionRevision } from '@ashishpandeyone/cdk-lambda-web-function';
 
 declare const fn: WebFunction;
 declare const table: dynamodb.Table;

@@ -1,10 +1,28 @@
 import { createHash } from 'node:crypto';
 import { Annotations, Stack, Token, Validations } from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { Construct } from 'constructs';
 import { WebFunctionAuthType, WebFunctionEndpointType } from './enums';
 import { EndpointLookup } from './private/endpoint-lookup';
 import { CFN_VALIDATE_UNKNOWN_TYPE, assertResourceName } from './private/validation';
+import type { IWebFunction } from './web-function';
+import { WebFunctionGrants } from './web-function-grants';
+import type { IWebFunctionRevision } from './web-function-revision';
+
+/**
+ * A revision and the share of an endpoint's traffic it receives.
+ */
+export interface WebFunctionRevisionWeight {
+  /** The revision. */
+  readonly revision: IWebFunctionRevision;
+
+  /**
+   * The revision's share of the endpoint's traffic, as a fraction (like `lambda.Alias` `additionalVersions`).
+   * Must be a whole percentage from 0.01 to 0.99.
+   */
+  readonly weight: number;
+}
 
 /**
  * Options for a Web Function's endpoint.
@@ -29,42 +47,96 @@ export interface WebFunctionEndpointOptions {
 
   /**
    * The endpoint's name, shown in logs (`endpointName`) and in the `lambda-web-endpoint-name` header.
+   * Names are unique per function.
    *
-   * When omitted, the name is `default-<hash>`, with the hash covering the endpoint type and regions,
-   * so changing either deploys a new endpoint cleanly. When set, changing the endpoint type or
-   * regions also requires a new name: two endpoints of one function can't share a name, and
-   * CloudFormation creates the replacement before deleting the old one.
+   * When omitted, the name ends in a hash of the endpoint type and regions, so changing either deploys
+   * a new endpoint cleanly. When set, changing the endpoint type or regions also requires a new name:
+   * two endpoints of one function can't share a name, and CloudFormation creates the replacement
+   * before deleting the old one.
    *
-   * @default - `default-<hash of type and regions>`
+   * @default - `default-<hash>` for the function's default endpoint, `<id>-<hash>` for endpoints added with `addEndpoint`
    */
   readonly endpointName?: string;
+
+  /**
+   * A description of the endpoint.
+   *
+   * @default - no description
+   */
+  readonly description?: string;
+
+  /**
+   * The most requests per second the endpoint accepts; excess requests get HTTP 429.
+   * Allowed: 0 (blocks all traffic), 100–1,000 in steps of 100, or 2,000–10,000 in steps of 1,000.
+   *
+   * Enforced separately in each region the endpoint serves from, so a multi-region endpoint
+   * can accept this many requests per second in every region.
+   *
+   * @default - no limit beyond the service quota of 10,000 requests per second per endpoint (per region)
+   */
+  readonly rateLimit?: number;
+
+  /**
+   * The most execution environments the endpoint may use (2–10,000). Each one uses 2 vCPUs of the account's quota.
+   *
+   * Enforced separately in each region the endpoint serves from.
+   *
+   * @default - scales within the account's vCPU quota
+   */
+  readonly maxEnvironments?: number;
 }
 
 /**
- * Internal: how `WebFunction` creates its endpoint. Not part of the public API.
+ * Options for `WebFunction.addEndpoint`.
  */
-interface WebFunctionEndpointProps extends WebFunctionEndpointOptions {
-  /** Literal name of the Web Function (the provider's IAM must not reference resource attributes). */
-  readonly functionName: string;
-
-  /** The Web Function's ARN. */
-  readonly functionArn: string;
-
-  /** ID of the revision the endpoint serves. */
-  readonly revisionId: string;
-
-  /** How callers are authenticated. */
+export interface AddWebFunctionEndpointOptions extends WebFunctionEndpointOptions {
+  /**
+   * How callers of this endpoint are authenticated.
+   */
   readonly authType: WebFunctionAuthType;
+
+  /**
+   * The revision the endpoint serves, e.g. an earlier one from `WebFunctionRevision.fromRevisionAttributes`
+   * to keep this endpoint on it while others move on. Same as calling `routeTraffic`.
+   *
+   * @default - the function's current revision (`currentRevision`)
+   */
+  readonly revision?: IWebFunctionRevision;
+
+  /**
+   * A second revision and its share of the endpoint's traffic; `revision` gets the rest.
+   * An endpoint routes to at most two revisions.
+   *
+   * @default - all traffic goes to `revision`
+   */
+  readonly additionalRevisions?: WebFunctionRevisionWeight[];
 }
 
 /**
- * The HTTPS endpoint of a Web Function. Created by `WebFunction`; access it as `fn.endpoint`.
+ * Internal: how `WebFunction` creates its endpoints. Not part of the public API.
+ */
+interface WebFunctionEndpointProps extends AddWebFunctionEndpointOptions {
+  /** The function that owns the endpoint. */
+  readonly webFunction: IWebFunction;
+
+  /** The function's current revision, served unless `revision` is given. */
+  readonly currentRevision: IWebFunctionRevision;
+
+  /** Prefix of the generated endpoint name. */
+  readonly namePrefix: string;
+
+  /** Extra input to the generated name's hash (the construct ID of an added endpoint). */
+  readonly nameSeed?: string;
+}
+
+/**
+ * An HTTPS endpoint of a Web Function: `fn.endpoint` (the default one) or the result of `fn.addEndpoint()`.
  *
- * Only `WebFunction` creates endpoints in this version (one per function), so the constructor is private.
+ * Endpoints are created only through `WebFunction`, which owns their log groups in every region, so the constructor is private.
  */
 export class WebFunctionEndpoint extends Construct {
   /**
-   * Creates the endpoint of a Web Function. Used by `WebFunction`.
+   * Creates an endpoint of a Web Function. Used by `WebFunction`.
    *
    * @internal
    */
@@ -81,6 +153,9 @@ export class WebFunctionEndpoint extends Construct {
   /** Where the endpoint serves traffic from. */
   public readonly endpointType: WebFunctionEndpointType;
 
+  /** How callers of the endpoint are authenticated. */
+  public readonly authType: WebFunctionAuthType;
+
   /** Every region the endpoint serves from: the home region first, then the others in alphabetical order. */
   public readonly regions: string[];
 
@@ -94,9 +169,14 @@ export class WebFunctionEndpoint extends Construct {
    */
   public readonly url: string;
 
+  /** Grants on this endpoint (e.g. `grants.invoke(principal)`). */
+  public readonly grants: WebFunctionGrants;
+
   private readonly homeRegion: string;
-  private readonly functionName: string;
-  private readonly functionArn: string;
+  private readonly webFunction: IWebFunction;
+  private readonly resource: lambda.CfnWebFunctionEndpoint;
+  private weights: lambda.CfnWebFunctionEndpoint.RevisionWeightProperty[];
+  private routed = false;
   private lookup?: EndpointLookup;
 
   private constructor(scope: Construct, id: string, props: WebFunctionEndpointProps) {
@@ -105,6 +185,8 @@ export class WebFunctionEndpoint extends Construct {
     const homeRegion = Stack.of(this).region;
     const endpointType = props.endpointType ?? WebFunctionEndpointType.HOME_REGION;
     const extraRegions = normaliseRegions(this, endpointType, homeRegion, props.regions ?? []);
+    validateRateLimit(this, props.rateLimit);
+    validateMaxEnvironments(this, props.maxEnvironments);
 
     if (props.endpointName !== undefined) {
       assertResourceName(this, 'endpointName', props.endpointName);
@@ -117,25 +199,34 @@ export class WebFunctionEndpoint extends Construct {
     }
 
     this.endpointType = endpointType;
-    this.endpointName = props.endpointName ?? defaultEndpointName(endpointType, extraRegions);
+    this.authType = props.authType;
+    this.endpointName = props.endpointName ?? defaultEndpointName(props.namePrefix, props.nameSeed, endpointType, extraRegions);
     this.regions = [homeRegion, ...extraRegions];
     this.homeRegion = homeRegion;
-    this.functionName = props.functionName;
-    this.functionArn = props.functionArn;
+    this.webFunction = props.webFunction;
+    this.weights = [{ revisionId: props.currentRevision.revisionId, weight: 100 }];
 
     const resource = new lambda.CfnWebFunctionEndpoint(this, 'Resource', {
-      functionName: props.functionArn,
+      functionName: props.webFunction.webFunctionArn,
       endpointName: this.endpointName,
       endpointType,
       authType: props.authType,
+      description: props.description,
       regions: extraRegions.length > 0 ? extraRegions : undefined,
-      revisionWeights: [{ revisionId: props.revisionId, weight: 100 }],
+      revisionWeights: this.weights,
+      throttleConfig: props.rateLimit !== undefined ? { rateLimit: props.rateLimit } : undefined,
+      scalingConfig: props.maxEnvironments !== undefined ? { maxEnvironments: props.maxEnvironments } : undefined,
     });
     Validations.of(resource).acknowledge(CFN_VALIDATE_UNKNOWN_TYPE);
+    this.resource = resource;
+    if (props.revision !== undefined || props.additionalRevisions !== undefined) {
+      this.routeTraffic(props.revision ?? props.currentRevision, props.additionalRevisions);
+    }
 
     this.endpointArn = resource.attrEndpointArn;
     this.domainName = resource.attrDomainName;
     this.url = `https://${resource.attrDomainName}`;
+    this.grants = WebFunctionGrants._forEndpoint(this);
   }
 
   /**
@@ -154,12 +245,47 @@ export class WebFunctionEndpoint extends Construct {
       return this.url;
     }
     this.lookup ??= new EndpointLookup(this, 'Lookup', {
-      functionName: this.functionName,
-      functionArn: this.functionArn,
+      functionName: this.webFunction.webFunctionName,
+      functionArn: this.webFunction.webFunctionArn,
       endpointName: this.endpointName,
       endpointArn: this.endpointArn,
     });
     return `https://${this.lookup.regionalDomain(region)}`;
+  }
+
+  /**
+   * Routes the endpoint to `revision` instead of the function's current revision, optionally sharing
+   * traffic with one more revision (`additionalRevisions`, which gets its weight; `revision` gets the rest).
+   *
+   * Use it to keep an endpoint on an earlier revision (`WebFunctionRevision.fromRevisionAttributes`),
+   * or to send part of the traffic to the current revision:
+   * `fn.endpoint.routeTraffic(previous, [{ revision: fn.currentRevision, weight: 0.1 }])`.
+   * Can be called once per endpoint, and not on one created with `revision` or `additionalRevisions`.
+   */
+  public routeTraffic(revision: IWebFunctionRevision, additionalRevisions?: WebFunctionRevisionWeight[]): void {
+    if (this.routed) {
+      throw new Error(`${this.node.path}: the endpoint's revisions are already set (revision, additionalRevisions or routeTraffic)`);
+    }
+    this.weights = revisionWeights(this, this.webFunction, revision, additionalRevisions ?? []);
+    this.resource.revisionWeights = this.weights;
+    this.routed = true;
+  }
+
+  /**
+   * The IDs of the revisions this endpoint routes to.
+   *
+   * @internal
+   */
+  public _revisionIds(): string[] {
+    return this.weights.map((w) => w.revisionId);
+  }
+
+  /**
+   * Allows `grantee` to call this endpoint. Shortcut for `grants.invoke(grantee)`.
+   * [disable-awslint:no-grants]
+   */
+  public grantInvoke(grantee: iam.IGrantable): iam.Grant {
+    return this.grants.invoke(grantee);
   }
 }
 
@@ -187,8 +313,57 @@ function normaliseRegions(scope: Construct, endpointType: WebFunctionEndpointTyp
   return extra;
 }
 
-/** `default-<hash>`: a type or region change produces a new name, so the replacement doesn't collide. */
-function defaultEndpointName(endpointType: WebFunctionEndpointType, extraRegions: string[]): string {
-  const hash = createHash('sha256').update([endpointType, ...extraRegions].join(',')).digest('hex').slice(0, 8);
-  return `default-${hash}`;
+function validateRateLimit(scope: Construct, rateLimit: number | undefined): void {
+  if (rateLimit === undefined || Token.isUnresolved(rateLimit)) return;
+  const allowed = rateLimit === 0
+    || (rateLimit >= 100 && rateLimit <= 1000 && rateLimit % 100 === 0)
+    || (rateLimit >= 2000 && rateLimit <= 10000 && rateLimit % 1000 === 0);
+  if (!allowed) {
+    throw new Error(`${scope.node.path}: rateLimit must be 0, 100-1,000 in steps of 100, or 2,000-10,000 in steps of 1,000, got ${rateLimit}`);
+  }
+}
+
+function validateMaxEnvironments(scope: Construct, maxEnvironments: number | undefined): void {
+  if (maxEnvironments === undefined || Token.isUnresolved(maxEnvironments)) return;
+  if (!Number.isInteger(maxEnvironments) || maxEnvironments < 2 || maxEnvironments > 10000) {
+    throw new Error(`${scope.node.path}: maxEnvironments must be an integer from 2 to 10,000, got ${maxEnvironments}`);
+  }
+}
+
+/** `primary` gets what `additional` leaves; weights are whole percentages summing to 100. */
+function revisionWeights(
+  scope: Construct,
+  webFunction: IWebFunction,
+  primary: IWebFunctionRevision,
+  additional: WebFunctionRevisionWeight[],
+): lambda.CfnWebFunctionEndpoint.RevisionWeightProperty[] {
+  for (const r of [primary, ...additional.map((a) => a.revision)]) {
+    if (r.webFunction !== webFunction) {
+      throw new Error(`${scope.node.path}: revision ${r.revisionId} belongs to another function`);
+    }
+  }
+  if (additional.length === 0) {
+    return [{ revisionId: primary.revisionId, weight: 100 }];
+  }
+  if (additional.length > 1) {
+    throw new Error(`${scope.node.path}: an endpoint routes to at most two revisions, so additionalRevisions takes one`);
+  }
+  const [{ revision, weight }] = additional;
+  const percent = Math.round(weight * 100);
+  if (Token.isUnresolved(weight) || Math.abs(weight * 100 - percent) > 1e-9 || percent < 1 || percent > 99) {
+    throw new Error(`${scope.node.path}: an additional revision's weight must be a whole percentage from 0.01 to 0.99, got ${weight}`);
+  }
+  if (revision === primary || (!Token.isUnresolved(revision.revisionId) && revision.revisionId === primary.revisionId)) {
+    throw new Error(`${scope.node.path}: the additional revision is the same as the endpoint's revision`);
+  }
+  return [{ revisionId: primary.revisionId, weight: 100 - percent }, { revisionId: revision.revisionId, weight: percent }];
+}
+
+/**
+ * `<prefix>-<hash>`, with the hash covering the endpoint type and regions: a type or region change produces
+ * a new name, so the replacement doesn't collide with the endpoint it replaces.
+ */
+function defaultEndpointName(prefix: string, seed: string | undefined, endpointType: WebFunctionEndpointType, extraRegions: string[]): string {
+  const hash = createHash('sha256').update([...(seed !== undefined ? [seed] : []), endpointType, ...extraRegions].join(',')).digest('hex').slice(0, 8);
+  return `${prefix}-${hash}`;
 }

@@ -14,7 +14,7 @@ export function webFunctionProvider(scope: Construct): CustomResourceProvider {
     // Log group deletion waits for late flushes (75s + a re-check) on top of the API calls.
     timeout: Duration.minutes(5),
     memorySize: Size.mebibytes(256),
-    description: 'Copies code, manages log groups and looks up endpoints for Lambda Web Functions',
+    description: 'Copies code, manages log groups, looks up endpoints and cleans up revisions for Lambda Web Functions',
   });
 }
 
