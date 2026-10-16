@@ -16,7 +16,7 @@
 
 <!--END STABILITY BANNER-->
 
-[AWS Lambda Web Functions](https://aws.amazon.com/lambda/) run an ordinary Node.js HTTP server (Express, Fastify, Hono, `node:http`) on Lambda and give it an HTTPS endpoint, optionally served from several regions. `WebFunction` deploys one, following the conventions of `aws-cdk-lib/aws-lambda` where the two services overlap.
+[AWS Lambda Web Functions](https://docs.aws.amazon.com/lambda/latest/dg/web-functions.html) run an ordinary Node.js HTTP server (Express, Fastify, Hono, `node:http`) on Lambda and give it an HTTPS endpoint, optionally served from several regions. `WebFunction` deploys one, following the conventions of `aws-cdk-lib/aws-lambda` where the two services overlap.
 
 ```ts fixture=bare
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -37,10 +37,18 @@ new CfnOutput(this, 'Url', { value: fn.endpoint.url }); // https://<id>.lambda-w
 
 The stack's region is the function's **home region**. Multi-region endpoints need a stack with an explicit `env.region`.
 
+## Installation
+
+```bash
+npm install @ashishpandeyone/cdk-lambda-web-function
+```
+
+It needs `aws-cdk-lib` 2.273.0 or later and `constructs` 10.5.1 or later (peer dependencies), and Node.js 22 or later. The package is published for TypeScript and JavaScript only.
+
 ## Writing the server
 
 1. Listen on the host and port in **`AWS_LAMBDA_HTTP_ENDPOINT`** (`0.0.0.0:3000` today). `PORT` is not set.
-2. Start listening within **about 9 seconds**, or initialisation fails with `Application.TimeoutListenError`.
+2. Start listening within **10 seconds**, or initialisation fails with `Application.TimeoutListenError`.
 3. Put the entry file at the root of your bundle as **`index.js`**, or set `entrypoint`.
 4. The runtime has **no AWS SDK**: bundle the clients you import.
 5. Code runs on **arm64**.
@@ -148,6 +156,7 @@ import { SignatureV4a } from '@smithy/signature-v4a';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
 
+const host = new URL(url).hostname; // url: the endpoint's URL
 const signer = new SignatureV4a({ service: 'lambda', region: '*', sha256: Sha256, credentials: fromNodeProviderChain() });
 const signed = await signer.sign(
   { method: 'GET', protocol: 'https:', hostname: host, path: '/', headers: { host } },
@@ -194,6 +203,7 @@ api.addEnvironment('FEATURE_FLAG', 'on');
 table.grantReadWriteData(api);           // the default role trusts lambda.amazonaws.com
 ```
 
+- **Each execution environment has 2 vCPUs and 2 GB of memory.** There's no memory setting as on Lambda functions; scale with `maxConcurrencyPerEnvironment` and more environments instead.
 - Requests handled by one environment share module-level state, so keep handlers concurrency-safe.
 - Environment variable names starting with `AWS_` are reserved.
 - **Renaming the function replaces it and changes its URL.** A generated name depends on the construct path, so moving the construct renames it too.
@@ -228,7 +238,7 @@ new NodejsWebFunction(this, 'Api', {
 
 Lambda Web Functions download code as the `lambda.amazonaws.com` service principal, from a **versioned** bucket, and the CDK bootstrap bucket allows neither. So each stack gets a small code bucket, and the code is copied into it on deploy. The bucket is emptied and deleted with the stack.
 
-Code copies, log groups in other regions, revision cleanup and the bucket's emptying run in one custom resource Lambda per stack. Its logs go to a log group the stack owns, kept for a month and deleted with the stack.
+Copying code, managing the function's log groups in every region, looking up regional URLs, cleaning up old revisions, creating rollback alarms in other regions and emptying the code bucket all run in one custom resource Lambda per stack. Its logs go to a log group the stack owns, kept for a month and deleted with the stack.
 
 ## Revisions
 
@@ -364,7 +374,7 @@ Web Functions log in two tiers:
  └──────────────────┘              └──────────────────────────────────────────┘
 ```
 
-**Query `fn.logGroup`**, the home-region group that receives every region's logs. The service would create missing groups without retention and never delete them, so the construct creates and owns all of them: both home-region groups, and `<group>.local` in every other region of the endpoint.
+**Query `fn.logGroup`**, the home-region group that receives every region's logs. The service would create missing groups without retention and never delete them, so the construct creates and owns all of them: both home-region groups, and `<group>.local` in every other region any of its endpoints serves from.
 
 ```ts
 new WebFunction(this, 'Api', {
@@ -386,7 +396,8 @@ new WebFunction(this, 'Api', {
 ## Limitations
 
 - Not yet supported: VPC access (network connectors), resource-policy permissions, KMS encryption, tracing, and a CloudFront origin.
-- `cdk deploy --hotswap` and `cdk watch` don't support Web Functions.
+- **Hotswap skips Web Functions without a warning.** `cdk deploy --hotswap` and `cdk watch`, which hotswaps by default, report `(no changes)` for a code or configuration change and the endpoint keeps serving the old revision. Use `cdk watch --hotswap-fallback` (or `cdk deploy --hotswap-fallback`): it deploys Web Function changes through CloudFormation, in about 40 seconds for a home-region endpoint.
+- Fixed limits: 512 MB of code (unzipped) and 32 KB of environment variables per revision, 512 MB of `/tmp` per execution environment, and 128 KiB of headers per request.
 - Quotas: 10 endpoints and about 50 revisions per function (Lambda cleans up older revisions automatically), and 10,000 requests per second per endpoint. Per account and region: 100,000 requests per second and 2,000 Arm64 vCPUs (each execution environment uses 2). The account quotas are adjustable, and new accounts start lower. See [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
 
 ## Development
