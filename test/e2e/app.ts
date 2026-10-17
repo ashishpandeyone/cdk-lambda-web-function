@@ -7,7 +7,7 @@
  * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint;
  * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500),
  * permissions (on: a caller allowed by the resource policy alone, plus CloudFront statements; none: the caller role without them),
- * cdn (true: a CloudFront distribution in a second stack, WebFnE2E-<scenario>-Cdn, with WebFunctionOrigin: / → the default
+ * cdn (true: a CloudFront distribution in a second stack in us-east-1, WebFnE2E-<scenario>-Cdn, with WebFunctionOrigin: / → the default
  * PER_REGION endpoint in us-east-1, /home/* → its home region, /global/* → a MULTI_REGION endpoint).
  */
 import * as path from 'node:path';
@@ -132,8 +132,9 @@ if (ctx('cdn') === 'true') {
   const global = fn.addEndpoint('Global', {
     authType: WebFunctionAuthType.AWS_IAM, endpointType: WebFunctionEndpointType.MULTI_REGION, regions: ['us-east-1'],
   });
-  // Its own stack: it writes its statements into the function's resource policy from there.
-  const cdnStack = new Stack(app, `WebFnE2E-${scenario}-Cdn`, { env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: HOME_REGION } });
+  // Its own stack, in another region (us-east-1, where CloudFront needs ACM certificates): it writes its statements into
+  // the function's resource policy in the home region, and reads the endpoint through CDK's cross-region references.
+  const cdnStack = new Stack(app, `WebFnE2E-${scenario}-Cdn`, { env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'us-east-1' } });
   const forwardAuthorization = new cloudfront.CachePolicy(cdnStack, 'ForwardAuthorization', {
     headerBehavior: cloudfront.CacheHeaderBehavior.allowList('Authorization'),
     minTtl: Duration.seconds(0),

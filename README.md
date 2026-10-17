@@ -229,6 +229,8 @@ Some things to know:
 - A `PER_REGION` endpoint's origin calls one region: the home region, or the one you pass as `region`. Use one origin per region, for example in an origin group.
 - A `MULTI_REGION` endpoint can't include opt-in regions (such as `me-central-1`), because CloudFront can't sign for them. The construct fails synthesis.
 - The distribution can be in another stack, in the function's account. Its stack writes the CloudFront statement into the function's resource policy, so the function's stack doesn't depend on it.
+- That stack can also be in another region, for example us-east-1 for an ACM certificate. CDK then passes the endpoint's domain and ARN with its cross-region references: SSM parameters plus custom resources of its own.
+- **Those references are strong by default.** A change that replaces the endpoint gives it a new domain and ARN. That includes a new endpoint type or region set, or a renamed function. The function's stack can't update a value while the distribution's stack still uses the old one, the same as with `Fn::ImportValue` in one region. Deploy such a change in two steps, or use weak references: CDK's synth warning `@aws-cdk/core:crossStackReferencesDefaultStrong` explains how.
 - Lambda@Edge origin-request and origin-response triggers aren't supported on behaviors with this origin.
 - The endpoint stays reachable at its own domain for signed requests your policies allow. Until a new distribution finishes deploying, requests through it can get a transient 403.
 - `new WebFunctionOrigin(endpoint)` is for a public (`NONE`) endpoint, for example behind AWS WAF. Lambda doesn't authenticate those requests, so the endpoint's own domain stays public too.

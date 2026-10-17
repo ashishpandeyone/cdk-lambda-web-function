@@ -14,7 +14,7 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { CloudWatchClient, DescribeAlarmsCommand, PutMetricDataCommand, SetAlarmStateCommand } from '@aws-sdk/client-cloudwatch';
-import { CloudWatchLogsClient, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
+import { CloudWatchLogsClient, DeleteLogGroupCommand, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { GetResourcePolicyCommand, GetWebFunctionEndpointCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
@@ -232,11 +232,21 @@ async function checkNothingLeft(s: Scenario, out: Outputs) {
   const bucketsLeft = (buckets.Buckets ?? []).map((b) => b.Name!);
   s.check('code bucket deleted', bucketsLeft.length === 0, bucketsLeft.join(', '));
   const providerLogs: string[] = [];
-  for (const prefix of [stackName, `/aws/lambda/${stackName}`]) {
-    const r = await logsIn(HOME).send(new DescribeLogGroupsCommand({ logGroupNamePrefix: prefix }));
-    for (const g of r.logGroups ?? []) providerLogs.push(g.logGroupName!);
+  for (const region of ALL_REGIONS) {
+    for (const prefix of [stackName, `/aws/lambda/${stackName}`]) {
+      const r = await logsIn(region).send(new DescribeLogGroupsCommand({ logGroupNamePrefix: prefix }));
+      for (const g of r.logGroups ?? []) {
+        // CDK's own cross-region reference providers log to groups it doesn't manage: test cleanup, not ours to check.
+        if (g.logGroupName!.includes('CustomCrossRegionExport')) {
+          await logsIn(region).send(new DeleteLogGroupCommand({ logGroupName: g.logGroupName! }));
+          s.log(`deleted CDK's ${region}:${g.logGroupName}`);
+        } else {
+          providerLogs.push(`${region}:${g.logGroupName}`);
+        }
+      }
+    }
   }
-  s.check('custom resource provider log groups deleted', providerLogs.length === 0, providerLogs.join(', '));
+  s.check('custom resource provider log groups deleted (every region)', providerLogs.length === 0, providerLogs.join(', '));
 }
 
 async function revisionIds(functionName: string): Promise<string[]> {
@@ -674,7 +684,7 @@ async function scenarioResourcePolicy(): Promise<Scenario> {
 }
 
 async function scenarioCloudFront(): Promise<Scenario> {
-  const s = new Scenario('Q', 'CloudFront in another stack: WebFunctionOrigin with OAC (regional SigV4, global SigV4a), two policy writers');
+  const s = new Scenario('Q', 'CloudFront in another stack and region: WebFunctionOrigin with OAC (regional SigV4, global SigV4a), two policy writers');
   const ctx: Context = { endpointType: 'PER_REGION', regions: ['us-east-1'], cdn: true, permissions: 'on' };
   let out: Outputs | undefined;
   try {
