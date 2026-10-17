@@ -1,4 +1,4 @@
-import { Annotations, Arn, ArnFormat, Duration, type IResource, Lazy, Names, RemovalPolicy, Resource, Stack, Token, TokenComparison, Validations } from 'aws-cdk-lib';
+import { Annotations, Arn, ArnFormat, type CfnResource, Duration, type IResource, Lazy, Names, RemovalPolicy, Resource, Stack, Token, TokenComparison, Validations } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -8,6 +8,7 @@ import { WebFunctionAuthType } from './enums';
 import { WebFunctionCode } from './private/code';
 import { WebFunctionLogGroup } from './private/log-group';
 import { DEFAULT_PERIOD, WEB_NAMESPACE } from './private/metrics';
+import { acknowledgeIamFindings } from './private/nag';
 import { ResourcePolicyStatements } from './private/resource-policy-statements';
 import { RevisionCleanup } from './private/revision-cleanup';
 import { CFN_VALIDATE_UNKNOWN_TYPE, assertResourceName } from './private/validation';
@@ -475,14 +476,11 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
       this.environment.AWS_LAMBDA_NODEJS_ENTRYPOINT = props.entrypoint;
     }
 
-    this.role = props.role ?? new iam.Role(this, 'ServiceRole', {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
-    });
+    const logGroupName = `/aws/lambda/web/${this.webFunctionName}`;
+    this.role = props.role ?? this.createRole(logGroupName);
     this.grantPrincipal = this.role;
 
     // Log groups first: the service would otherwise create them without retention.
-    const logGroupName = `/aws/lambda/web/${this.webFunctionName}`;
     this.logGroupName = logGroupName;
     this.logOptions = { logRetention: props.logRetention, logRemovalPolicy: props.logRemovalPolicy };
     const logGroups = this.createLogGroups(logGroupName);
@@ -629,6 +627,31 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
       this.resource.node.addDependency(group.resource);
     }
     return endpoint;
+  }
+
+  /**
+   * The default execution role: write to the function's own log groups only (the home region's and every region's
+   * `.local` copy), the minimum AWS documents for Web Functions. Not `AWSLambdaBasicExecutionRole`, whose
+   * `logs:CreateLogGroup` on `*` lets environments still shutting down re-create a deleted or renamed group.
+   */
+  private createRole(logGroupName: string): iam.Role {
+    const stack = Stack.of(this);
+    const logGroupArn = (region: string, name: string) => stack.formatArn({
+      service: 'logs', region, resource: 'log-group', resourceName: `${name}:*`, arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+    });
+    const role = new iam.Role(this, 'ServiceRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      inlinePolicies: {
+        Logs: new iam.PolicyDocument({
+          statements: [new iam.PolicyStatement({
+            actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+            resources: [logGroupArn(stack.region, logGroupName), logGroupArn('*', `${logGroupName}.local`)],
+          })],
+        }),
+      },
+    });
+    acknowledgeIamFindings(role.node.defaultChild as CfnResource, 'Log streams of this function\'s own log groups, in every region it serves from');
+    return role;
   }
 
   private createLogGroups(logGroupName: string): WebFunctionLogGroup[] {

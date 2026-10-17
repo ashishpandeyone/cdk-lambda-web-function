@@ -276,6 +276,7 @@ table.grantReadWriteData(api);           // the default role trusts lambda.amazo
 - **Each execution environment has 2 vCPUs and 2 GB of memory.** There's no memory setting as on Lambda functions; scale with `maxConcurrencyPerEnvironment` and more environments instead.
 - Requests handled by one environment share module-level state, so keep handlers concurrency-safe.
 - Environment variable names starting with `AWS_` are reserved.
+- **The default execution role can only write to the function's own log groups**: the home region's, and the `.local` copy in every region it serves from. That's the minimum AWS documents for Web Functions. It doesn't use `AWSLambdaBasicExecutionRole`, which can also create any log group. Pass `role` to use your own, and include those log permissions.
 - **Renaming the function replaces it and changes its URL.** A generated name depends on the construct path, so moving the construct renames it too.
 
 ### Bundling TypeScript with `NodejsWebFunction`
@@ -462,6 +463,21 @@ new WebFunction(this, 'Api', {
 - Every event is stored twice (`.local` plus the home-region copy), so expect about double log ingestion, plus cross-region transfer.
 - With `DESTROY`, deletion waits about a minute after the function is gone, because environments flush their last lines late.
 - Subscribe only to `fn.logGroup`: subscribing to the `.local` groups as well delivers every event twice.
+
+## cdk-nag
+
+The library acknowledges the [cdk-nag](https://github.com/cdklabs/cdk-nag) AwsSolutions findings on the resources it creates, each with a reason, so they don't show up in your reports:
+
+| Finding | Resource | Reason |
+|---|---|---|
+| IAM5 (wildcards) | the default execution role | log streams of the function's own log groups, in every region it serves from |
+| IAM5 | the deployment handlers' role (canary and linear deployments) | their own log group, `cloudwatch:DescribeAlarms` (composite alarms need `*`), and the revisions and endpoints of the functions they deploy |
+| IAM4, IAM5, SF1, SF2 | the CDK Provider framework behind deployments | CDK's own functions and waiter state machine |
+| S1 (access logs) | the stack's code bucket | it only holds copies of the stack's code assets |
+
+- **This works with both cdk-nag versions**, without depending on cdk-nag. cdk-nag 3 reads CDK's `Validations.of(...).acknowledge()`, one ID per finding. cdk-nag 2 reads `cdk_nag` metadata in the template.
+- **Your own statements and resources are still checked.** That includes statements you add to the function's role (`addToRolePolicy`, grants) and your CloudFront distribution's settings.
+- Only the AwsSolutions pack is covered; findings from the HIPAA, NIST and PCI packs aren't acknowledged.
 
 ## Upgrading
 

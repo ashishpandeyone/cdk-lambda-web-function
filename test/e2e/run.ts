@@ -151,13 +151,17 @@ async function call(url: string, creds?: Credentials): Promise<{ status: number;
   return { status: res.status, body };
 }
 
-/** Retries until the expected status (IAM changes take a few minutes to reach the endpoint). */
+/**
+ * Retries until the expected status (IAM changes take a few minutes to reach the endpoint). A network error, e.g. DNS
+ * for a domain created moments ago, counts as status 0 and is retried too.
+ */
 async function callUntil(url: string, creds: Credentials | undefined, expected: number, timeoutMs = 240_000) {
+  const attempt = () => call(url, creds).catch((e) => ({ status: 0, body: `${(e as Error).message}: ${((e as Error).cause as Error | undefined)?.message}` }));
   const end = Date.now() + timeoutMs;
-  let last = await call(url, creds);
+  let last = await attempt();
   while (last.status !== expected && Date.now() < end) {
     await sleep(15_000);
-    last = await call(url, creds);
+    last = await attempt();
   }
   return last;
 }
@@ -305,8 +309,9 @@ async function scenarioPerRegion(): Promise<Scenario> {
       `${beforeRegions.EndpointName} -> ${out.EndpointName}`);
     const endpoints = await web.send(new ListWebFunctionEndpointsCommand({ functionName: out.FunctionName }));
     s.check('old endpoint deleted (one endpoint left)', (endpoints.endpoints ?? []).length === 1, `endpoints=${(endpoints.endpoints ?? []).length}`);
-    const eu = await callUntil(out.Urleuwest1, await adminCredentials(), 200, 120_000);
-    s.check('new region eu-west-1 serves v2', eu.status === 200 && eu.body?.region === 'eu-west-1' && eu.body?.version === 'v2', `status=${eu.status} region=${eu.body?.region}`);
+    const eu = await callUntil(out.Urleuwest1, await adminCredentials(), 200, 300_000);
+    s.check('new region eu-west-1 serves v2', eu.status === 200 && eu.body?.region === 'eu-west-1' && eu.body?.version === 'v2',
+      `status=${eu.status} region=${eu.body?.region}${eu.status === 0 ? ` (${eu.body})` : ''}`);
     await checkLogs(s, out, ['eu-west-1']);
   } catch (e) {
     s.check('scenario ran to completion', false, (e as Error).message);
