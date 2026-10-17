@@ -9,6 +9,7 @@ import { WebFunctionCode } from './private/code';
 import { WebFunctionLogGroup } from './private/log-group';
 import { DEFAULT_PERIOD, WEB_NAMESPACE } from './private/metrics';
 import { acknowledgeIamFindings } from './private/nag';
+import { injectProps } from './private/property-injection';
 import { ResourcePolicyStatements } from './private/resource-policy-statements';
 import { RevisionCleanup } from './private/revision-cleanup';
 import { CFN_VALIDATE_UNKNOWN_TYPE, assertResourceName } from './private/validation';
@@ -386,6 +387,12 @@ export abstract class WebFunctionBase extends Resource implements IWebFunction {
  */
 export class WebFunction extends WebFunctionBase implements iam.IGrantable {
   /**
+   * Identifies this class to property injectors (`PropertyInjectors.of(scope).add(...)`), which can set default props for
+   * every `WebFunction` under a scope. Injectors for `WebFunction` also apply to `NodejsWebFunction`.
+   */
+  public static readonly PROPERTY_INJECTION_ID: string = '@ashishpandeyone/cdk-lambda-web-function.WebFunction';
+
+  /**
    * Imports an existing Web Function by its ARN (in any region or account).
    */
   public static fromWebFunctionArn(scope: Construct, id: string, webFunctionArn: string): IWebFunction {
@@ -444,6 +451,7 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
 
   constructor(scope: Construct, id: string, props: WebFunctionProps) {
     super(scope, id);
+    props = injectProps(WebFunction.PROPERTY_INJECTION_ID, props, scope, id);
 
     if (props.runtime.family !== lambda.RuntimeFamily.NODEJS) {
       throw new Error(`${this.node.path}: Lambda Web Functions run Node.js only, got ${props.runtime.name}`);

@@ -279,6 +279,24 @@ table.grantReadWriteData(api);           // the default role trusts lambda.amazo
 - **The default execution role can only write to the function's own log groups**: the home region's, and the `.local` copy in every region it serves from. That's the minimum AWS documents for Web Functions. It doesn't use `AWSLambdaBasicExecutionRole`, which can also create any log group. Pass `role` to use your own, and include those log permissions.
 - **Renaming the function replaces it and changes its URL.** A generated name depends on the construct path, so moving the construct renames it too.
 
+### Defaults for every function (property injection)
+
+To give every function under a scope the same defaults, register a property injector for `WebFunction.PROPERTY_INJECTION_ID`, as you would for aws-cdk-lib's constructs. For example, a team's log retention:
+
+```ts
+class TeamDefaults implements IPropertyInjector {
+  public readonly constructUniqueId = WebFunction.PROPERTY_INJECTION_ID;
+  public inject(originalProps: WebFunctionProps): WebFunctionProps {
+    // The team's defaults, with explicit props winning.
+    return Object.assign({ logRetention: logs.RetentionDays.ONE_MONTH }, originalProps);
+  }
+}
+PropertyInjectors.of(this).add(new TeamDefaults()); // or on the app, for every stack
+```
+
+- An injector applies to functions created under the scope it's added to. The nearest one wins.
+- `NodejsWebFunction` has its own ID (`NodejsWebFunction.PROPERTY_INJECTION_ID`). Its injector runs first, then `WebFunction`'s, as with aws-cdk-lib's `NodejsFunction` and `Function`.
+
 ### Bundling TypeScript with `NodejsWebFunction`
 
 `NodejsWebFunction` is a `WebFunction` that bundles your server from a TypeScript or JavaScript entry file with esbuild, like `NodejsFunction` does for Lambda functions:
