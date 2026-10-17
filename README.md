@@ -575,6 +575,10 @@ If your function has a resource policy (from `addPermission`, a grant to another
 
 Then upgrade, without changing your statements in the same deployment. The new version takes over the statements it writes itself. A statement you removed in the same deployment would stay in the policy.
 
+## Examples
+
+- [cdk-freedom-lambda-web-functions](https://github.com/ashishpandeyone/cdk-freedom-lambda-web-functions): an end-to-end app that runs the Freedoom game server on a Web Function and streams frames to the browser. It rebuilds Julian Wood's [freedoom-lambda-web-functions](https://github.com/julianwood/freedoom-lambda-web-functions) L1 stack with `WebFunction`. It covers the default execution role with DynamoDB grants on every table replica, CloudFront in front of an `AWS_IAM` endpoint (`-c cloudfront=true`), a `MULTI_REGION` endpoint backed by a DynamoDB global table (`-c regions=…`), and its README lists what changes when moving from the L1 resources.
+
 ## Limitations
 
 - Not yet supported: VPC access (network connectors), KMS encryption, and tracing.
