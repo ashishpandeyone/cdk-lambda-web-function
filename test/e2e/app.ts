@@ -7,7 +7,7 @@
  * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint;
  * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500),
  * permissions (on: a caller allowed by the resource policy alone, plus CloudFront statements; none: the caller role without them),
- * kms (true: encryptionKey, a multi-Region key with a us-east-1 replica in stacks of their own),
+ * kms (true: encryptionKey and logEncryptionKey, a multi-Region key with a us-east-1 replica in stacks of their own),
  * cdn (true: a CloudFront distribution in a second stack in us-east-1, WebFnE2E-<scenario>-Cdn, with WebFunctionOrigin: / → the default
  * PER_REGION endpoint in us-east-1, /home/* → its home region, /global/* → a MULTI_REGION endpoint).
  */
@@ -55,6 +55,7 @@ const kmsKey = ctx('kms') === 'true'
 
 const options: WebFunctionOptions = {
   encryptionKey: kmsKey,
+  logEncryptionKey: kmsKey,
   authType: WebFunctionAuthType[ctx('auth', 'AWS_IAM') as keyof typeof WebFunctionAuthType],
   endpoint: {
     endpointType,
@@ -178,11 +179,12 @@ if (kmsKey) {
       statements: [
         new iam.PolicyStatement({ principals: [new iam.AccountRootPrincipal()], actions: ['kms:*'], resources: ['*'] }),
         fn.encryptionKeyPolicyStatement(),
+        fn.logEncryptionKeyPolicyStatement('us-east-1'),
       ],
     }),
   });
   replica.applyRemovalPolicy(RemovalPolicy.DESTROY);
-  // The replica must exist before the endpoint activates in us-east-1.
+  // The replica must exist before the endpoint activates in us-east-1, and before its log group.
   stack.addStackDependency(replicaStack);
   new CfnOutput(replicaStack, 'ReplicaKeyArn', { value: replica.attrArn });
   out('KeyArn', kmsKey.keyArn);

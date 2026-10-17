@@ -314,6 +314,35 @@ new kms.CfnReplicaKey(replicaStack, 'KeyReplica', {
 - **Changing the key creates a new revision.** Earlier revisions keep their key, including the ones kept as rollback targets (`revisionRetention`). Keep the old key enabled while any of them might serve traffic again.
 - **Disabling the key, or removing Lambda's access, stops new execution environments from starting.** Running ones keep their decrypted copy for a while, so this doesn't contain traffic immediately.
 
+Log groups are encrypted by CloudWatch Logs. To use your own key for them too, pass `logEncryptionKey`. It can be the same key:
+
+```ts
+declare const key: kms.Key;              // multiRegion: true, in the function's region
+declare const replica: kms.CfnReplicaKey; // in us-east-1
+
+const api = new WebFunction(this, 'Api', {
+  runtime: lambda.Runtime.NODEJS_24_X,
+  code: lambda.Code.fromAsset('build'),
+  authType: WebFunctionAuthType.AWS_IAM,
+  endpoint: { endpointType: WebFunctionEndpointType.PER_REGION, regions: ['us-east-1'] },
+  logEncryptionKey: key,
+});
+
+// The replica's policy also allows CloudWatch Logs in its region, for this function's groups.
+replica.keyPolicy = new iam.PolicyDocument({
+  statements: [
+    new iam.PolicyStatement({ principals: [new iam.AccountRootPrincipal()], actions: ['kms:*'], resources: ['*'] }),
+    api.logEncryptionKeyPolicyStatement('us-east-1'),
+  ],
+});
+```
+
+- **CloudWatch Logs only uses a key in the group's own region.** The groups in the key's region use the key. Groups in other regions use the multi-Region key's replica there, which has the same key ID. With a single-Region key, synthesis fails as soon as a group is in another region.
+- **A key defined in your app gets CloudWatch Logs' statement for its own region.** It allows `logs.<region>.amazonaws.com` to use the key for this function's log groups only. Add `logEncryptionKeyPolicyStatement(region)` to each replica's policy, and to an imported key's.
+- **The construct's provider sets the key on each group, and needs `kms:DescribeKey` on it to do so.** The construct grants that through IAM, which a key's default policy allows. If a key's policy doesn't delegate to IAM, allow the provider's role in the key policy.
+- **Adding or changing the key encrypts new events only.** Existing events stay encrypted with the key they were written with. Removing `logEncryptionKey` sets the groups back to CloudWatch Logs' encryption.
+- **Retained log groups need their key to stay readable.** The default `logRemovalPolicy` is `RETAIN`, so keep the key while you keep the logs.
+
 ### Defaults for every function (property injection)
 
 To give every function under a scope the same defaults, register a property injector for `WebFunction.PROPERTY_INJECTION_ID`, as you would for aws-cdk-lib's constructs. For example, a team's log retention:

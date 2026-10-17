@@ -64,6 +64,7 @@ new NodejsWebFunction(scope: Construct, id: string, props: NodejsWebFunctionProp
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addPermission">addPermission</a></code> | Allows a principal in another account, an AWS service or an organization to call the function's endpoints, through the function's resource policy. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addToRolePolicy">addToRolePolicy</a></code> | Adds a statement to the execution role's policy. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.encryptionKeyPolicyStatement">encryptionKeyPolicyStatement</a></code> | The key-policy statement Lambda needs to start this function's environments with `encryptionKey`: `kms:Decrypt` for `lambda.amazonaws.com`, limited to this function's revisions (`aws:SourceArn` and the encryption context Lambda sets). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.logEncryptionKeyPolicyStatement">logEncryptionKeyPolicyStatement</a></code> | The key-policy statement CloudWatch Logs needs in `region` to encrypt this function's log groups there with `logEncryptionKey`, limited to those groups (`kms:EncryptionContext:aws:logs:arn`). |
 
 ---
 
@@ -363,6 +364,25 @@ The key-policy statement Lambda needs to start this function's environments with
 It's added to `encryptionKey` when the key is defined in this app. Add it to every replica of a multi-Region key
 yourself: replicas don't share their primary's policy.
 
+##### `logEncryptionKeyPolicyStatement` <a name="logEncryptionKeyPolicyStatement" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.logEncryptionKeyPolicyStatement"></a>
+
+```typescript
+public logEncryptionKeyPolicyStatement(region: string): PolicyStatement
+```
+
+The key-policy statement CloudWatch Logs needs in `region` to encrypt this function's log groups there with `logEncryptionKey`, limited to those groups (`kms:EncryptionContext:aws:logs:arn`).
+
+It's added to `logEncryptionKey` for the key's own region when the key is defined in this app. Add it to the
+replica in every other region the function serves from yourself: replicas don't share their primary's policy.
+
+###### `region`<sup>Required</sup> <a name="region" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.logEncryptionKeyPolicyStatement.parameter.region"></a>
+
+- *Type:* string
+
+the region of the key or replica.
+
+---
+
 #### Static Functions <a name="Static Functions" id="Static Functions"></a>
 
 | **Name** | **Description** |
@@ -542,6 +562,7 @@ Imports an existing Web Function in this stack's account and region by its name.
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.revisionId">revisionId</a></code> | <code>string</code> | The ID of the current revision. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.role">role</a></code> | <code>aws-cdk-lib.aws_iam.IRole</code> | The execution role. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.encryptionKey">encryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | The customer managed key of the function's revisions, if any. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.logEncryptionKey">logEncryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | The customer managed key of the function's log groups, if any. |
 
 ---
 
@@ -727,6 +748,18 @@ The customer managed key of the function's revisions, if any.
 
 ---
 
+##### `logEncryptionKey`<sup>Optional</sup> <a name="logEncryptionKey" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.logEncryptionKey"></a>
+
+```typescript
+public readonly logEncryptionKey: IKey;
+```
+
+- *Type:* aws-cdk-lib.aws_kms.IKey
+
+The customer managed key of the function's log groups, if any.
+
+---
+
 #### Constants <a name="Constants" id="Constants"></a>
 
 | **Name** | **Type** | **Description** |
@@ -814,6 +847,7 @@ new WebFunction(scope: Construct, id: string, props: WebFunctionProps)
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.addPermission">addPermission</a></code> | Allows a principal in another account, an AWS service or an organization to call the function's endpoints, through the function's resource policy. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.addToRolePolicy">addToRolePolicy</a></code> | Adds a statement to the execution role's policy. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.encryptionKeyPolicyStatement">encryptionKeyPolicyStatement</a></code> | The key-policy statement Lambda needs to start this function's environments with `encryptionKey`: `kms:Decrypt` for `lambda.amazonaws.com`, limited to this function's revisions (`aws:SourceArn` and the encryption context Lambda sets). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.logEncryptionKeyPolicyStatement">logEncryptionKeyPolicyStatement</a></code> | The key-policy statement CloudWatch Logs needs in `region` to encrypt this function's log groups there with `logEncryptionKey`, limited to those groups (`kms:EncryptionContext:aws:logs:arn`). |
 
 ---
 
@@ -1113,6 +1147,25 @@ The key-policy statement Lambda needs to start this function's environments with
 It's added to `encryptionKey` when the key is defined in this app. Add it to every replica of a multi-Region key
 yourself: replicas don't share their primary's policy.
 
+##### `logEncryptionKeyPolicyStatement` <a name="logEncryptionKeyPolicyStatement" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.logEncryptionKeyPolicyStatement"></a>
+
+```typescript
+public logEncryptionKeyPolicyStatement(region: string): PolicyStatement
+```
+
+The key-policy statement CloudWatch Logs needs in `region` to encrypt this function's log groups there with `logEncryptionKey`, limited to those groups (`kms:EncryptionContext:aws:logs:arn`).
+
+It's added to `logEncryptionKey` for the key's own region when the key is defined in this app. Add it to the
+replica in every other region the function serves from yourself: replicas don't share their primary's policy.
+
+###### `region`<sup>Required</sup> <a name="region" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.logEncryptionKeyPolicyStatement.parameter.region"></a>
+
+- *Type:* string
+
+the region of the key or replica.
+
+---
+
 #### Static Functions <a name="Static Functions" id="Static Functions"></a>
 
 | **Name** | **Description** |
@@ -1292,6 +1345,7 @@ Imports an existing Web Function in this stack's account and region by its name.
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.revisionId">revisionId</a></code> | <code>string</code> | The ID of the current revision. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.role">role</a></code> | <code>aws-cdk-lib.aws_iam.IRole</code> | The execution role. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.encryptionKey">encryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | The customer managed key of the function's revisions, if any. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.logEncryptionKey">logEncryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | The customer managed key of the function's log groups, if any. |
 
 ---
 
@@ -1474,6 +1528,18 @@ public readonly encryptionKey: IKey;
 - *Type:* aws-cdk-lib.aws_kms.IKey
 
 The customer managed key of the function's revisions, if any.
+
+---
+
+##### `logEncryptionKey`<sup>Optional</sup> <a name="logEncryptionKey" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.logEncryptionKey"></a>
+
+```typescript
+public readonly logEncryptionKey: IKey;
+```
+
+- *Type:* aws-cdk-lib.aws_kms.IKey
+
+The customer managed key of the function's log groups, if any.
 
 ---
 
@@ -3018,6 +3084,7 @@ const nodejsWebFunctionProps: NodejsWebFunctionProps = { ... }
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.encryptionKey">encryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | A customer managed KMS key for the function's revisions: their code and environment variables. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.environment">environment</a></code> | <code>{[ key: string ]: string}</code> | Environment variables. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.logEncryptionKey">logEncryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | A customer managed KMS key for the function's log groups, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.logRemovalPolicy">logRemovalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | What happens to the log groups when the function is removed: RETAIN or DESTROY. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.logRetention">logRetention</a></code> | <code>aws-cdk-lib.aws_logs.RetentionDays</code> | Retention for every log group of the function, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.maxConcurrencyPerEnvironment">maxConcurrencyPerEnvironment</a></code> | <code>number</code> | How many requests one execution environment handles at the same time (1-128). |
@@ -3118,6 +3185,26 @@ public readonly environment: {[ key: string ]: string};
 Environment variables.
 
 Names starting with `AWS_` are reserved.
+
+---
+
+##### `logEncryptionKey`<sup>Optional</sup> <a name="logEncryptionKey" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunctionProps.property.logEncryptionKey"></a>
+
+```typescript
+public readonly logEncryptionKey: IKey;
+```
+
+- *Type:* aws-cdk-lib.aws_kms.IKey
+- *Default:* CloudWatch Logs' own encryption
+
+A customer managed KMS key for the function's log groups, in every region it serves from.
+
+CloudWatch Logs needs a key in each group's region: for regions other than the key's own, the construct uses the
+replica of a **multi-Region key** there (the same key ID). Each key's policy must allow CloudWatch Logs in its
+region (see `logEncryptionKeyPolicyStatement()`). A key defined in this app gets that statement for its own region.
+
+Removing the key decrypts nothing: the groups keep their existing events encrypted with it.
+[disable-awslint:prefer-ref-interface]
 
 ---
 
@@ -3688,6 +3775,7 @@ const webFunctionOptions: WebFunctionOptions = { ... }
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.encryptionKey">encryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | A customer managed KMS key for the function's revisions: their code and environment variables. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.environment">environment</a></code> | <code>{[ key: string ]: string}</code> | Environment variables. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.logEncryptionKey">logEncryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | A customer managed KMS key for the function's log groups, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.logRemovalPolicy">logRemovalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | What happens to the log groups when the function is removed: RETAIN or DESTROY. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.logRetention">logRetention</a></code> | <code>aws-cdk-lib.aws_logs.RetentionDays</code> | Retention for every log group of the function, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.maxConcurrencyPerEnvironment">maxConcurrencyPerEnvironment</a></code> | <code>number</code> | How many requests one execution environment handles at the same time (1-128). |
@@ -3783,6 +3871,26 @@ public readonly environment: {[ key: string ]: string};
 Environment variables.
 
 Names starting with `AWS_` are reserved.
+
+---
+
+##### `logEncryptionKey`<sup>Optional</sup> <a name="logEncryptionKey" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOptions.property.logEncryptionKey"></a>
+
+```typescript
+public readonly logEncryptionKey: IKey;
+```
+
+- *Type:* aws-cdk-lib.aws_kms.IKey
+- *Default:* CloudWatch Logs' own encryption
+
+A customer managed KMS key for the function's log groups, in every region it serves from.
+
+CloudWatch Logs needs a key in each group's region: for regions other than the key's own, the construct uses the
+replica of a **multi-Region key** there (the same key ID). Each key's policy must allow CloudWatch Logs in its
+region (see `logEncryptionKeyPolicyStatement()`). A key defined in this app gets that statement for its own region.
+
+Removing the key decrypts nothing: the groups keep their existing events encrypted with it.
+[disable-awslint:prefer-ref-interface]
 
 ---
 
@@ -4469,6 +4577,7 @@ const webFunctionProps: WebFunctionProps = { ... }
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.encryptionKey">encryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | A customer managed KMS key for the function's revisions: their code and environment variables. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.endpoint">endpoint</a></code> | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionEndpointOptions">WebFunctionEndpointOptions</a></code> | The default endpoint (`fn.endpoint`): where it serves from, its name and limits. It serves the current revision; route it elsewhere with `fn.endpoint.routeTraffic()`. Add more endpoints with `addEndpoint`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.environment">environment</a></code> | <code>{[ key: string ]: string}</code> | Environment variables. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.logEncryptionKey">logEncryptionKey</a></code> | <code>aws-cdk-lib.aws_kms.IKey</code> | A customer managed KMS key for the function's log groups, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.logRemovalPolicy">logRemovalPolicy</a></code> | <code>aws-cdk-lib.RemovalPolicy</code> | What happens to the log groups when the function is removed: RETAIN or DESTROY. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.logRetention">logRetention</a></code> | <code>aws-cdk-lib.aws_logs.RetentionDays</code> | Retention for every log group of the function, in every region it serves from. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.maxConcurrencyPerEnvironment">maxConcurrencyPerEnvironment</a></code> | <code>number</code> | How many requests one execution environment handles at the same time (1-128). |
@@ -4567,6 +4676,26 @@ public readonly environment: {[ key: string ]: string};
 Environment variables.
 
 Names starting with `AWS_` are reserved.
+
+---
+
+##### `logEncryptionKey`<sup>Optional</sup> <a name="logEncryptionKey" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionProps.property.logEncryptionKey"></a>
+
+```typescript
+public readonly logEncryptionKey: IKey;
+```
+
+- *Type:* aws-cdk-lib.aws_kms.IKey
+- *Default:* CloudWatch Logs' own encryption
+
+A customer managed KMS key for the function's log groups, in every region it serves from.
+
+CloudWatch Logs needs a key in each group's region: for regions other than the key's own, the construct uses the
+replica of a **multi-Region key** there (the same key ID). Each key's policy must allow CloudWatch Logs in its
+region (see `logEncryptionKeyPolicyStatement()`). A key defined in this app gets that statement for its own region.
+
+Removing the key decrypts nothing: the groups keep their existing events encrypted with it.
+[disable-awslint:prefer-ref-interface]
 
 ---
 

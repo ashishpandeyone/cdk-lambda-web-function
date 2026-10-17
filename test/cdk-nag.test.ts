@@ -11,7 +11,7 @@ import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionDeploym
 const code = () => lambda.Code.fromAsset(path.join(__dirname, 'fixtures', 'hello'));
 const env = { account: '111111111111', region: 'ap-south-1' };
 
-/** Everything this library can create: endpoints of every type, a deployment, lookups, policies, a key, an origin, an import. */
+/** Everything this library can create: endpoints of every type, a deployment, lookups, policies, keys for revisions and logs, an origin, an import. */
 function app(stackProps: StackProps = { env }) {
   // Regional endpoints need a stack with an explicit region.
   const regions = stackProps.env?.region !== undefined;
@@ -31,10 +31,12 @@ function app(stackProps: StackProps = { env }) {
     fn.endpoint.regionalUrl('us-east-1');
   }
   fn.addPermission('Partner', { principal: new iam.AccountPrincipal('222222222222') });
+  const key = new kms.Key(stack, 'Key', { enableKeyRotation: true });
   new NodejsWebFunction(stack, 'Node', {
     entry: path.join(__dirname, 'fixtures', 'nodejs', 'server.ts'),
     authType: WebFunctionAuthType.NONE,
-    encryptionKey: new kms.Key(stack, 'Key', { enableKeyRotation: true }),
+    encryptionKey: key,
+    logEncryptionKey: key,
   });
 
   const cdnStack = new Stack(a, 'Cdn', stackProps);

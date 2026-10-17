@@ -1,6 +1,6 @@
 import {
-  CloudWatchLogsClient, CreateLogGroupCommand, DeleteLogGroupCommand, DeleteRetentionPolicyCommand,
-  DescribeLogGroupsCommand, PutRetentionPolicyCommand,
+  AssociateKmsKeyCommand, CloudWatchLogsClient, CreateLogGroupCommand, DeleteLogGroupCommand, DeleteRetentionPolicyCommand,
+  DescribeLogGroupsCommand, DisassociateKmsKeyCommand, PutRetentionPolicyCommand,
 } from '@aws-sdk/client-cloudwatch-logs';
 import type { CloudFormationCustomResourceEvent } from 'aws-lambda';
 import type { HandlerResponse } from './index';
@@ -45,10 +45,21 @@ export async function handleLogGroup(event: CloudFormationCustomResourceEvent): 
 
 async function ensure(props: LogGroupProperties): Promise<void> {
   const logs = logsIn(props.Region);
+  let created = false;
   try {
-    await logs.send(new CreateLogGroupCommand({ logGroupName: props.LogGroupName }));
+    await logs.send(new CreateLogGroupCommand({ logGroupName: props.LogGroupName, kmsKeyId: props.KmsKeyId }));
+    created = true;
   } catch (e) {
     if ((e as { name?: string }).name !== 'ResourceAlreadyExistsException') throw e;
+  }
+  // An existing group (an update, or adopted after a retained one) gets the key it should have, or none.
+  if (!created) {
+    const current = (await describe(props))?.kmsKeyId;
+    if (props.KmsKeyId && current !== props.KmsKeyId) {
+      await logs.send(new AssociateKmsKeyCommand({ logGroupName: props.LogGroupName, kmsKeyId: props.KmsKeyId }));
+    } else if (!props.KmsKeyId && current) {
+      await logs.send(new DisassociateKmsKeyCommand({ logGroupName: props.LogGroupName }));
+    }
   }
   if (props.RetentionInDays === 'Infinite') {
     await logs.send(new DeleteRetentionPolicyCommand({ logGroupName: props.LogGroupName }));
@@ -80,6 +91,10 @@ async function deleteIfExists(props: LogGroupProperties): Promise<void> {
 }
 
 async function exists(props: LogGroupProperties): Promise<boolean> {
+  return (await describe(props)) !== undefined;
+}
+
+async function describe(props: LogGroupProperties) {
   const res = await logsIn(props.Region).send(new DescribeLogGroupsCommand({ logGroupNamePrefix: props.LogGroupName }));
-  return (res.logGroups ?? []).some((g) => g.logGroupName === props.LogGroupName);
+  return (res.logGroups ?? []).find((g) => g.logGroupName === props.LogGroupName);
 }
