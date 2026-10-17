@@ -1,5 +1,5 @@
 // Fixture for README examples: imports and a few declared values; the example replaces "/// here".
-import { CfnOutput, CfnResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { CfnOutput, CfnResource, Duration, type IPropertyInjector, PropertyInjectors, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -10,6 +10,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import {
   NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionDeployment, WebFunctionEndpointType, WebFunctionOrigin, WebFunctionRevision,
+  type WebFunctionProps,
 } from '@ashishpandeyone/cdk-lambda-web-function';
 
 declare const fn: WebFunction;

@@ -4,6 +4,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { OutputFormat } from 'aws-cdk-lib/aws-lambda-nodejs';
 import type { Construct } from 'constructs';
 import { bundledCode, findLockFile, outputFile, resolveEntry } from './private/bundling';
+import { injectProps } from './private/property-injection';
 import { WebFunction, type WebFunctionOptions } from './web-function';
 
 /**
@@ -164,7 +165,14 @@ export interface NodejsWebFunctionProps extends WebFunctionOptions {
  * bundle, and `NODE_OPTIONS=--enable-source-maps` when source maps are on.
  */
 export class NodejsWebFunction extends WebFunction {
+  /**
+   * Identifies this class to property injectors (`PropertyInjectors.of(scope).add(...)`). A `NodejsWebFunction` gets
+   * its own injector first, then `WebFunction`'s, as aws-cdk-lib's `NodejsFunction` does with `Function`'s.
+   */
+  public static readonly PROPERTY_INJECTION_ID: string = '@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction';
+
   constructor(scope: Construct, id: string, props: NodejsWebFunctionProps) {
+    props = injectProps(NodejsWebFunction.PROPERTY_INJECTION_ID, props, scope, id);
     const runtime = props.runtime ?? lambda.Runtime.NODEJS_24_X;
     const entry = resolveEntry(props.entry);
     const projectRoot = path.resolve(props.projectRoot ?? path.dirname(lockFile(props, entry)));

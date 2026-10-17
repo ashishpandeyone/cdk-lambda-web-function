@@ -702,6 +702,25 @@ The execution role.
 
 ---
 
+#### Constants <a name="Constants" id="Constants"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.PROPERTY_INJECTION_ID">PROPERTY_INJECTION_ID</a></code> | <code>string</code> | Identifies this class to property injectors (`PropertyInjectors.of(scope).add(...)`). A `NodejsWebFunction` gets its own injector first, then `WebFunction`'s, as aws-cdk-lib's `NodejsFunction` does with `Function`'s. |
+
+---
+
+##### `PROPERTY_INJECTION_ID`<sup>Required</sup> <a name="PROPERTY_INJECTION_ID" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.property.PROPERTY_INJECTION_ID"></a>
+
+```typescript
+public readonly PROPERTY_INJECTION_ID: string;
+```
+
+- *Type:* string
+
+Identifies this class to property injectors (`PropertyInjectors.of(scope).add(...)`). A `NodejsWebFunction` gets its own injector first, then `WebFunction`'s, as aws-cdk-lib's `NodejsFunction` does with `Function`'s.
+
+---
 
 ### WebFunction <a name="WebFunction" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction"></a>
 
@@ -1408,6 +1427,25 @@ The execution role.
 
 ---
 
+#### Constants <a name="Constants" id="Constants"></a>
+
+| **Name** | **Type** | **Description** |
+| --- | --- | --- |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.PROPERTY_INJECTION_ID">PROPERTY_INJECTION_ID</a></code> | <code>string</code> | Identifies this class to property injectors (`PropertyInjectors.of(scope).add(...)`), which can set default props for every `WebFunction` under a scope. Injectors for `WebFunction` also apply to `NodejsWebFunction`. |
+
+---
+
+##### `PROPERTY_INJECTION_ID`<sup>Required</sup> <a name="PROPERTY_INJECTION_ID" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.property.PROPERTY_INJECTION_ID"></a>
+
+```typescript
+public readonly PROPERTY_INJECTION_ID: string;
+```
+
+- *Type:* string
+
+Identifies this class to property injectors (`PropertyInjectors.of(scope).add(...)`), which can set default props for every `WebFunction` under a scope. Injectors for `WebFunction` also apply to `NodejsWebFunction`.
+
+---
 
 ### WebFunctionBase <a name="WebFunctionBase" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase"></a>
 
