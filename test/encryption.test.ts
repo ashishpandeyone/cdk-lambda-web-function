@@ -101,7 +101,9 @@ test('functions sharing a key each add their own statement, without Sids that wo
   const stack = new Stack(app, 'Stack', { env });
   const key = new kms.Key(stack, 'Key');
   for (const name of ['a', 'b']) {
-    new WebFunction(stack, name, { runtime: lambda.Runtime.NODEJS_24_X, code: code(), authType: WebFunctionAuthType.AWS_IAM, webFunctionName: name, encryptionKey: key });
+    new WebFunction(stack, name, {
+      runtime: lambda.Runtime.NODEJS_24_X, code: code(), authType: WebFunctionAuthType.AWS_IAM, webFunctionName: name, encryptionKey: key,
+    });
   }
   const statements = Object.values(Template.fromStack(stack).findResources('AWS::KMS::Key'))[0].Properties.KeyPolicy.Statement;
   const lambdas = statements.filter((s: { Principal: { Service?: string } }) => s.Principal.Service === 'lambda.amazonaws.com');
