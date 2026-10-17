@@ -2,6 +2,7 @@ import { CustomResource, Duration, RemovalPolicy, Stack, Tags } from 'aws-cdk-li
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
+import { acknowledgeNagRules } from './nag';
 import { grantToProvider, webFunctionProvider } from './provider';
 import { CODE_BUCKET_CLEANUP_RESOURCE_TYPE, EMPTY_ON_DELETE_TAG, type CodeBucketCleanupProperties } from './provider-protocol';
 
@@ -35,6 +36,8 @@ export function codeBucket(scope: Construct): s3.Bucket {
       abortIncompleteMultipartUploadAfter: Duration.days(1),
     }],
   });
+  acknowledgeNagRules(bucket.node.defaultChild as s3.CfnBucket, ['AwsSolutions-S1'],
+    'Holds only copies of this stack\'s code assets, written by the stack\'s own custom resource provider');
   bucket.addToResourcePolicy(new iam.PolicyStatement({
     sid: 'LambdaWebFunctionsReadCode',
     principals: [new iam.ServicePrincipal('lambda.amazonaws.com')],

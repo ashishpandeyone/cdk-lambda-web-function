@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import * as path from 'node:path';
-import { ArnFormat, CustomResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
+import { ArnFormat, type CfnResource, CustomResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
+import { acknowledgeIamFindings, acknowledgeNagUnder } from './nag';
 import { TRAFFIC_SHIFT_RESOURCE_TYPE, type TrafficShiftProperties } from './provider-protocol';
 import type { WebFunctionDeployment } from '../web-function-deployment';
 
@@ -30,16 +31,14 @@ class DeploymentProvider extends Construct {
 
   private constructor(scope: Construct, id: string) {
     super(scope, id);
-    this.role = new iam.Role(this, 'Role', {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole')],
-    });
+    const logGroup = new logs.LogGroup(this, 'Logs', { retention: logs.RetentionDays.ONE_MONTH, removalPolicy: RemovalPolicy.DESTROY });
+    this.role = new iam.Role(this, 'Role', { assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com') });
+    // Its own log group only (not AWSLambdaBasicExecutionRole, which can create any group).
+    this.grant({ actions: ['logs:CreateLogStream', 'logs:PutLogEvents'], resources: [logGroup.logGroupArn] });
     // Rollback detection: is the stack rolling back? (the provider's own stack only).
     this.grant({ actions: ['cloudformation:DescribeStacks'], resources: [Stack.of(this).stackId] });
     // Composite alarms are only returned with DescribeAlarms on '*'.
     this.grant({ actions: ['cloudwatch:DescribeAlarms'], resources: ['*'] });
-
-    const logGroup = new logs.LogGroup(this, 'Logs', { retention: logs.RetentionDays.ONE_MONTH, removalPolicy: RemovalPolicy.DESTROY });
     const handler = (name: string, handlerName: string, description: string) => new lambda.Function(this, name, {
       runtime: lambda.Runtime.NODEJS_24_X,
       architecture: lambda.Architecture.ARM_64,
@@ -60,6 +59,12 @@ class DeploymentProvider extends Construct {
       logGroup,
     });
     this.serviceToken = provider.serviceToken;
+
+    acknowledgeIamFindings(this.role.node.findChild('DefaultPolicy').node.defaultChild as CfnResource,
+      'The deployment handlers\' own log group, DescribeAlarms (composite alarms need *), and the revisions and endpoints of the functions they deploy');
+    acknowledgeNagUnder(provider, 'The CDK custom resource Provider framework\'s own functions and waiter state machine', {
+      'AWS::StepFunctions::StateMachine': ['AwsSolutions-SF1', 'AwsSolutions-SF2'],
+    });
   }
 
   /**
