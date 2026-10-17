@@ -738,7 +738,7 @@ async function scenarioCloudFront(): Promise<Scenario> {
 }
 
 async function scenarioKms(): Promise<Scenario> {
-  const s = new Scenario('K', 'encryptionKey: a multi-Region key with a us-east-1 replica, PER_REGION endpoint');
+  const s = new Scenario('K', 'encryptionKey and logEncryptionKey: a multi-Region key with a us-east-1 replica, PER_REGION endpoint');
   const ctx: Context = { endpointType: 'PER_REGION', regions: ['us-east-1'], kms: true };
   let out: Outputs | undefined;
   try {
@@ -750,6 +750,12 @@ async function scenarioKms(): Promise<Scenario> {
     }
     const revision = await web.send(new GetWebFunctionRevisionCommand({ functionName: out.FunctionName, revisionId: out.RevisionId }));
     s.check('the revision is encrypted with the key', revision.kmsKeyArn === out.KeyArn, `kmsKeyArn=${revision.kmsKeyArn}`);
+    // Each region's groups use the key there: the primary at home, the replica in us-east-1.
+    for (const [region, name, arn] of [[HOME, out.LogGroupName, out.KeyArn], [HOME, `${out.LogGroupName}.local`, out.KeyArn], ['us-east-1', `${out.LogGroupName}.local`, out.ReplicaKeyArn]]) {
+      const group = await logGroup(region, name);
+      s.check(`${region} ${name} is encrypted with the key there`, group?.kmsKeyId === arn, `kmsKeyId=${group?.kmsKeyId ?? 'none'}`);
+    }
+    await checkLogs(s, out, ['ap-south-1', 'us-east-1']);
   } catch (e) {
     s.check('scenario ran to completion', false, (e as Error).message);
   } finally {
@@ -758,7 +764,9 @@ async function scenarioKms(): Promise<Scenario> {
       await checkNothingLeft(s, out);
       for (const [region, arn] of [[HOME, out.KeyArn], ['us-east-1', out.ReplicaKeyArn]]) {
         const key = await new KMSClient({ region, credentials }).send(new DescribeKeyCommand({ KeyId: arn })).catch(() => undefined);
-        s.check(`${region} key scheduled for deletion`, key?.KeyMetadata?.KeyState === 'PendingDeletion', `state=${key?.KeyMetadata?.KeyState}`);
+        // A primary waits for its replicas' deletion first (PendingReplicaDeletion).
+        const state = key?.KeyMetadata?.KeyState;
+        s.check(`${region} key scheduled for deletion`, state === 'PendingDeletion' || state === 'PendingReplicaDeletion', `state=${state}`);
       }
     }
   }

@@ -128,6 +128,20 @@ export interface WebFunctionOptions {
   readonly logRemovalPolicy?: RemovalPolicy;
 
   /**
+   * A customer managed KMS key for the function's log groups, in every region it serves from.
+   *
+   * CloudWatch Logs needs a key in each group's region: for regions other than the key's own, the construct uses the
+   * replica of a **multi-Region key** there (the same key ID). Each key's policy must allow CloudWatch Logs in its
+   * region (see `logEncryptionKeyPolicyStatement()`). A key defined in this app gets that statement for its own region.
+   *
+   * Removing the key decrypts nothing: the groups keep their existing events encrypted with it.
+   * [disable-awslint:prefer-ref-interface]
+   *
+   * @default - CloudWatch Logs' own encryption
+   */
+  readonly logEncryptionKey?: kms.IKey;
+
+  /**
    * The minimum level of application logs to keep.
    *
    * @default lambda.ApplicationLogLevel.INFO
@@ -450,6 +464,9 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
   /** The customer managed key of the function's revisions, if any. */
   public readonly encryptionKey?: kms.IKey;
 
+  /** The customer managed key of the function's log groups, if any. */
+  public readonly logEncryptionKey?: kms.IKey;
+
   /** The principal to grant permissions to (the execution role). */
   public readonly grantPrincipal: iam.IPrincipal;
 
@@ -463,7 +480,7 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
   private readonly endpoints: WebFunctionEndpoint[] = [];
   private readonly remoteLogGroups = new Map<string, WebFunctionLogGroup>();
   private readonly logGroupName: string;
-  private readonly logOptions: Pick<WebFunctionProps, 'logRetention' | 'logRemovalPolicy'>;
+  private readonly logOptions: Pick<WebFunctionProps, 'logRetention' | 'logRemovalPolicy' | 'logEncryptionKey'>;
   private readonly resource: lambda.CfnWebFunction;
   private readonly revisionCleanup: RevisionCleanup;
   private readonly permissionIds = new Set<string>();
@@ -509,7 +526,13 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
 
     // Log groups first: the service would otherwise create them without retention.
     this.logGroupName = logGroupName;
-    this.logOptions = { logRetention: props.logRetention, logRemovalPolicy: props.logRemovalPolicy };
+    this.logOptions = { logRetention: props.logRetention, logRemovalPolicy: props.logRemovalPolicy, logEncryptionKey: props.logEncryptionKey };
+    this.logEncryptionKey = props.logEncryptionKey;
+    if (this.logEncryptionKey) {
+      // Only a key defined in this app takes the statement, for the region it's in.
+      this.logEncryptionKey.addToResourcePolicy(this.logEncryptionKeyPolicyStatement(this.logEncryptionKey.env.region));
+      this.node.addValidation({ validate: () => this.validateLogEncryptionKey() });
+    }
     const logGroups = this.createLogGroups(logGroupName);
     this.logGroup = logs.LogGroup.fromLogGroupName(this, 'LogGroup', logGroupName);
 
@@ -657,12 +680,52 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
     });
   }
 
+  /**
+   * The key-policy statement CloudWatch Logs needs in `region` to encrypt this function's log groups there with
+   * `logEncryptionKey`, limited to those groups (`kms:EncryptionContext:aws:logs:arn`).
+   *
+   * It's added to `logEncryptionKey` for the key's own region when the key is defined in this app. Add it to the
+   * replica in every other region the function serves from yourself: replicas don't share their primary's policy.
+   *
+   * @param region the region of the key or replica
+   */
+  public logEncryptionKeyPolicyStatement(region: string): iam.PolicyStatement {
+    const groups = Stack.of(this).formatArn({
+      service: 'logs', region, resource: 'log-group', resourceName: `${this.logGroupName}*`, arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+    });
+    return new iam.PolicyStatement({
+      principals: [new iam.ServicePrincipal(`logs.${region}.amazonaws.com`)],
+      actions: ['kms:Encrypt*', 'kms:Decrypt*', 'kms:ReEncrypt*', 'kms:GenerateDataKey*', 'kms:Describe*'],
+      resources: ['*'],
+      conditions: { ArnLike: { 'kms:EncryptionContext:aws:logs:arn': groups } },
+    });
+  }
+
   /** Regional and multi-region endpoints need a multi-Region key: otherwise their other regions fail to activate. */
   private validateEncryptionKey(): string[] {
     const multi = this.endpoints.filter((e) => e.endpointType !== WebFunctionEndpointType.HOME_REGION);
     if (multi.length === 0 || isMultiRegionKey(this.encryptionKey!) !== false) return [];
     const typeName = (t: WebFunctionEndpointType) => (t === WebFunctionEndpointType.MULTI_REGION ? 'MULTI_REGION' : 'PER_REGION');
     return [`encryptionKey must be a multi-Region key (with a replica in every serving region) for ${multi.map((e) => `${e.node.id} (${typeName(e.endpointType)})`).join(', ')}: with a single-Region key, the endpoint fails to activate in its other regions and the deployment rolls back`];
+  }
+
+  /** Log groups outside the key's region need the replica of a multi-Region key there. */
+  private validateLogEncryptionKey(): string[] {
+    const key = this.logEncryptionKey!;
+    if (isMultiRegionKey(key) !== false) return [];
+    const elsewhere = [Stack.of(this).region, ...this.remoteLogGroups.keys()]
+      .filter((region) => Token.compareStrings(region, key.env.region) === TokenComparison.DIFFERENT);
+    if (elsewhere.length === 0) return [];
+    return [`logEncryptionKey must be a multi-Region key (with a replica in every serving region) for the log groups in ${elsewhere.join(', ')}: CloudWatch Logs only uses a key in the group's own region`];
+  }
+
+  /** The key for a log group in `region`: the key itself in its own region, otherwise its replica there (same key ID). */
+  private logKeyArnIn(region: string): string | undefined {
+    const key = this.logOptions.logEncryptionKey;
+    if (!key) return undefined;
+    if (region === key.env.region || Token.compareStrings(region, key.env.region) === TokenComparison.SAME) return key.keyArn;
+    if (!Token.isUnresolved(key.keyArn)) return Arn.format({ ...Arn.split(key.keyArn, ArnFormat.SLASH_RESOURCE_NAME), region });
+    return Stack.of(this).formatArn({ service: 'kms', region, account: key.env.account, resource: 'key', resourceName: key.keyId });
   }
 
   private createEndpoint(id: string, options: AddWebFunctionEndpointOptions, namePrefix: string, nameSeed?: string): WebFunctionEndpoint {
@@ -732,6 +795,7 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
       logGroupName: name,
       retention: this.logOptions.logRetention ?? logs.RetentionDays.ONE_MONTH,
       removalPolicy: this.logOptions.logRemovalPolicy ?? RemovalPolicy.RETAIN,
+      kmsKeyArn: this.logKeyArnIn(region),
     });
   }
 }

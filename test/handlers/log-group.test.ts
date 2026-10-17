@@ -1,6 +1,6 @@
 import {
-  CloudWatchLogsClient, CreateLogGroupCommand, DeleteLogGroupCommand, DeleteRetentionPolicyCommand,
-  DescribeLogGroupsCommand, PutRetentionPolicyCommand,
+  AssociateKmsKeyCommand, CloudWatchLogsClient, CreateLogGroupCommand, DeleteLogGroupCommand, DeleteRetentionPolicyCommand,
+  DescribeLogGroupsCommand, DisassociateKmsKeyCommand, PutRetentionPolicyCommand,
 } from '@aws-sdk/client-cloudwatch-logs';
 import { mockClient } from 'aws-sdk-client-mock';
 import { cfnEvent } from './events';
@@ -36,10 +36,55 @@ test('creates the group with retention', async () => {
 
 test('adopts a group that already exists (e.g. created by the service, or retained by a previous stack)', async () => {
   logs.on(CreateLogGroupCommand).rejects(named('ResourceAlreadyExistsException'));
+  logs.on(DescribeLogGroupsCommand).resolves({ logGroups: [{ logGroupName: props.LogGroupName }] });
 
   await handler(cfnEvent('Create', LOG_GROUP_RESOURCE_TYPE, props));
 
   expect(logs.commandCalls(PutRetentionPolicyCommand)).toHaveLength(1);
+  expect(logs.commandCalls(DisassociateKmsKeyCommand)).toHaveLength(0);
+});
+
+describe('encryption key', () => {
+  const KmsKeyId = 'arn:aws:kms:eu-west-1:111111111111:key/mrk-1234abcd12ab34cd56ef1234567890ab';
+  const existing = (kmsKeyId?: string) => {
+    logs.on(CreateLogGroupCommand).rejects(named('ResourceAlreadyExistsException'));
+    logs.on(DescribeLogGroupsCommand).resolves({ logGroups: [{ logGroupName: `${props.LogGroupName}x` }, { logGroupName: props.LogGroupName, kmsKeyId }] });
+  };
+
+  test('creates the group with the key', async () => {
+    await handler(cfnEvent('Create', LOG_GROUP_RESOURCE_TYPE, { ...props, KmsKeyId }));
+
+    expect(logs.commandCalls(CreateLogGroupCommand)[0].args[0].input).toEqual({ logGroupName: props.LogGroupName, kmsKeyId: KmsKeyId });
+    expect(logs.commandCalls(AssociateKmsKeyCommand)).toHaveLength(0);
+  });
+
+  test('associates the key with an existing group that has none, or another', async () => {
+    for (const current of [undefined, 'arn:aws:kms:eu-west-1:111111111111:key/other']) {
+      logs.reset();
+      existing(current);
+      await handler(cfnEvent('Update', LOG_GROUP_RESOURCE_TYPE, { ...props, KmsKeyId }, 'phys'));
+      const associated = logs.commandCalls(AssociateKmsKeyCommand).map((c) => c.args[0].input);
+      expect(associated).toEqual([{ logGroupName: props.LogGroupName, kmsKeyId: KmsKeyId }]);
+    }
+  });
+
+  test('leaves an existing group with the right key alone', async () => {
+    existing(KmsKeyId);
+    await handler(cfnEvent('Update', LOG_GROUP_RESOURCE_TYPE, { ...props, KmsKeyId }, 'phys'));
+    expect(logs.commandCalls(AssociateKmsKeyCommand)).toHaveLength(0);
+    expect(logs.commandCalls(DisassociateKmsKeyCommand)).toHaveLength(0);
+  });
+
+  test('disassociates the key when it was removed, and only then', async () => {
+    existing(KmsKeyId);
+    await handler(cfnEvent('Update', LOG_GROUP_RESOURCE_TYPE, props, 'phys'));
+    expect(logs.commandCalls(DisassociateKmsKeyCommand).map((c) => c.args[0].input)).toEqual([{ logGroupName: props.LogGroupName }]);
+
+    logs.reset();
+    existing(undefined);
+    await handler(cfnEvent('Update', LOG_GROUP_RESOURCE_TYPE, props, 'phys'));
+    expect(logs.commandCalls(DisassociateKmsKeyCommand)).toHaveLength(0);
+  });
 });
 
 test('removes retention when it is Infinite', async () => {

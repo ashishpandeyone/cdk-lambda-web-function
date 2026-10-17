@@ -111,7 +111,10 @@ describe('log group', () => {
     const role = Object.values(t.findResources('AWS::IAM::Role'))[0] as any;
     expect(role.Properties.Policies[0].PolicyDocument.Statement).toContainEqual({
       Effect: 'Allow',
-      Action: ['logs:CreateLogGroup', 'logs:PutRetentionPolicy', 'logs:DeleteRetentionPolicy', 'logs:DeleteLogGroup'],
+      Action: [
+        'logs:CreateLogGroup', 'logs:PutRetentionPolicy', 'logs:DeleteRetentionPolicy', 'logs:DeleteLogGroup',
+        'logs:AssociateKmsKey', 'logs:DisassociateKmsKey',
+      ],
       Resource: { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':logs:*:111111111111:log-group:/aws/lambda/web/*']] },
     });
   });

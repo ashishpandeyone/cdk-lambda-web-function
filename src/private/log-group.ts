@@ -13,6 +13,8 @@ export interface WebFunctionLogGroupProps {
   readonly logGroupName: string;
   readonly retention: logs.RetentionDays;
   readonly removalPolicy: RemovalPolicy;
+  /** A KMS key in `region`, by ARN. */
+  readonly kmsKeyArn?: string;
 }
 
 /** One Web Function log group in one (possibly remote) region, owned through the provider. */
@@ -35,7 +37,11 @@ export class WebFunctionLogGroup extends Construct {
     // per-region grants break when a region is removed (CloudFormation reverts or updates the role first).
     const webLogGroups = stack.formatArn({ service: 'logs', region: '*', resource: 'log-group', resourceName: '/aws/lambda/web/*', arnFormat: ArnFormat.COLON_RESOURCE_NAME });
     grantToProvider(provider, {
-      Action: ['logs:CreateLogGroup', 'logs:PutRetentionPolicy', 'logs:DeleteRetentionPolicy', 'logs:DeleteLogGroup'],
+      // The key actions too when no group has a key: removing one needs DisassociateKmsKey.
+      Action: [
+        'logs:CreateLogGroup', 'logs:PutRetentionPolicy', 'logs:DeleteRetentionPolicy', 'logs:DeleteLogGroup',
+        'logs:AssociateKmsKey', 'logs:DisassociateKmsKey',
+      ],
       Resource: webLogGroups,
     });
     grantToProvider(provider, {
@@ -43,11 +49,17 @@ export class WebFunctionLogGroup extends Construct {
       Resource: stack.formatArn({ service: 'logs', region: '*', resource: 'log-group', resourceName: '*', arnFormat: ArnFormat.COLON_RESOURCE_NAME }),
     });
 
+    if (props.kmsKeyArn) {
+      // CreateLogGroup and AssociateKmsKey check that the caller can describe the key.
+      grantToProvider(provider, { Action: 'kms:DescribeKey', Resource: props.kmsKeyArn });
+    }
+
     const properties: LogGroupProperties = {
       Region: props.region,
       LogGroupName: props.logGroupName,
       RetentionInDays: props.retention === logs.RetentionDays.INFINITE ? 'Infinite' : String(props.retention),
       RemovalPolicy: props.removalPolicy === RemovalPolicy.DESTROY ? 'destroy' : 'retain',
+      KmsKeyId: props.kmsKeyArn,
       FlushWaitSeconds: String(FLUSH_WAIT_SECONDS),
       RecheckWaitSeconds: String(RECHECK_WAIT_SECONDS),
     };

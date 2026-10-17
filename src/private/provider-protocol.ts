@@ -30,6 +30,8 @@ export interface LogGroupProperties {
   /** Days, or 'Infinite' for no retention. */
   readonly RetentionInDays: string;
   readonly RemovalPolicy: 'retain' | 'destroy';
+  /** The ARN of a KMS key in the group's region to encrypt it with; none means the service's own encryption. */
+  readonly KmsKeyId?: string;
   /** Seconds to wait before deleting, so environments still shutting down can flush their last lines. */
   readonly FlushWaitSeconds: string;
   /** Seconds to wait before checking once more that the service hasn't re-created the group. */
