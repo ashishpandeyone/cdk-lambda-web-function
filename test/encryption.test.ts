@@ -20,7 +20,6 @@ function make(props: (stack: Stack) => Partial<WebFunctionProps>) {
 
 const revisions = 'arn:aws:lambda:ap-south-1:111111111111:web-function/api/revision/*';
 const lambdaStatement = {
-  Sid: 'LambdaWebFunctionDecrypt',
   Effect: 'Allow',
   Principal: { Service: 'lambda.amazonaws.com' },
   Action: 'kms:Decrypt',
@@ -95,4 +94,17 @@ describe('encryptionKey', () => {
     expect(assembly.getStackByName('Replica').dependencies.filter((d) => !d.id.endsWith('.assets'))).toEqual([]);
     Template.fromStack(replicaStack).hasResourceProperties('AWS::KMS::ReplicaKey', { KeyPolicy: { Statement: [lambdaStatement] } });
   });
+});
+
+test('functions sharing a key each add their own statement, without Sids that would clash', () => {
+  const app = new App();
+  const stack = new Stack(app, 'Stack', { env });
+  const key = new kms.Key(stack, 'Key');
+  for (const name of ['a', 'b']) {
+    new WebFunction(stack, name, { runtime: lambda.Runtime.NODEJS_24_X, code: code(), authType: WebFunctionAuthType.AWS_IAM, webFunctionName: name, encryptionKey: key });
+  }
+  const statements = Object.values(Template.fromStack(stack).findResources('AWS::KMS::Key'))[0].Properties.KeyPolicy.Statement;
+  const lambdas = statements.filter((s: { Principal: { Service?: string } }) => s.Principal.Service === 'lambda.amazonaws.com');
+  expect(lambdas.map((s: { Sid?: string }) => s.Sid)).toEqual([undefined, undefined]);
+  expect(JSON.stringify(lambdas)).toMatch(/web-function\/a\/revision.*web-function\/b\/revision/);
 });

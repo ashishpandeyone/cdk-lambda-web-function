@@ -648,7 +648,6 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
       service: 'lambda', resource: 'web-function', resourceName: `${this.webFunctionName}/revision/*`, arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
     });
     return new iam.PolicyStatement({
-      sid: 'LambdaWebFunctionDecrypt',
       principals: [new iam.ServicePrincipal('lambda.amazonaws.com')],
       actions: ['kms:Decrypt'],
       resources: ['*'],
