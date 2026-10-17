@@ -20,6 +20,10 @@
       "type": "build"
     },
     {
+      "name": "@aws-sdk/client-kms",
+      "type": "build"
+    },
+    {
       "name": "@aws-sdk/client-lambda-web",
       "version": "^3.1151.0",
       "type": "build"

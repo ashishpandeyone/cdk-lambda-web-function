@@ -3,6 +3,7 @@ import { App, Duration, Stack, Validations, type StackProps } from 'aws-cdk-lib'
 import { Template } from 'aws-cdk-lib/assertions';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionDeployment, WebFunctionEndpointType, WebFunctionOrigin } from '../src';
@@ -10,7 +11,7 @@ import { NodejsWebFunction, WebFunction, WebFunctionAuthType, WebFunctionDeploym
 const code = () => lambda.Code.fromAsset(path.join(__dirname, 'fixtures', 'hello'));
 const env = { account: '111111111111', region: 'ap-south-1' };
 
-/** Everything this library can create: endpoints of every type, a deployment, lookups, policies, an origin, an import. */
+/** Everything this library can create: endpoints of every type, a deployment, lookups, policies, a key, an origin, an import. */
 function app(stackProps: StackProps = { env }) {
   // Regional endpoints need a stack with an explicit region.
   const regions = stackProps.env?.region !== undefined;
@@ -30,7 +31,11 @@ function app(stackProps: StackProps = { env }) {
     fn.endpoint.regionalUrl('us-east-1');
   }
   fn.addPermission('Partner', { principal: new iam.AccountPrincipal('222222222222') });
-  new NodejsWebFunction(stack, 'Node', { entry: path.join(__dirname, 'fixtures', 'nodejs', 'server.ts'), authType: WebFunctionAuthType.NONE });
+  new NodejsWebFunction(stack, 'Node', {
+    entry: path.join(__dirname, 'fixtures', 'nodejs', 'server.ts'),
+    authType: WebFunctionAuthType.NONE,
+    encryptionKey: new kms.Key(stack, 'Key', { enableKeyRotation: true }),
+  });
 
   const cdnStack = new Stack(a, 'Cdn', stackProps);
   const cdn = new cloudfront.Distribution(cdnStack, 'Cdn', { defaultBehavior: { origin: WebFunctionOrigin.withOriginAccessControl(fn.endpoint) } });
