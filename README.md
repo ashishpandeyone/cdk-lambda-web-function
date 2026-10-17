@@ -581,7 +581,7 @@ Then upgrade, without changing your statements in the same deployment. The new v
 
 ## Limitations
 
-- Not yet supported: VPC access (network connectors), KMS encryption, and tracing.
+- Not yet supported: VPC access (network connectors) and tracing.
 - **Hotswap skips Web Functions without a warning.** `cdk deploy --hotswap` and `cdk watch`, which hotswaps by default, report `(no changes)` for a code or configuration change and the endpoint keeps serving the old revision. Use `cdk watch --hotswap-fallback` (or `cdk deploy --hotswap-fallback`): it deploys Web Function changes through CloudFormation, in about 40 seconds for a home-region endpoint.
 - Fixed limits: 512 MB of code (unzipped) and 32 KB of environment variables per revision, 512 MB of `/tmp` per execution environment, and 128 KiB of headers per request.
 - Quotas: 10 endpoints and about 50 revisions per function (Lambda cleans up older revisions automatically), and 10,000 requests per second per endpoint. Per account and region: 100,000 requests per second and 2,000 Arm64 vCPUs (each execution environment uses 2). The account quotas are adjustable, and new accounts start lower. See [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html).
