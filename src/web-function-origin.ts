@@ -3,6 +3,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import type { Construct } from 'constructs';
 import { WebFunctionAuthType, WebFunctionEndpointType } from './enums';
+import type { WebFunctionBase } from './web-function';
 import type { WebFunctionEndpoint } from './web-function-endpoint';
 
 /**
@@ -75,7 +76,7 @@ export class WebFunctionOrigin extends cloudfront.OriginBase {
    * (`always-amz-auth`, which keeps the viewer's `Authorization` header for your application), and the function's
    * resource policy allows `cloudfront.amazonaws.com` to call this endpoint on behalf of this distribution only.
    *
-   * The distribution must be in the function's stack.
+   * The distribution can be in another stack than the function, in the same account.
    */
   public static withOriginAccessControl(endpoint: WebFunctionEndpoint, props: WebFunctionOriginWithOacProps = {}): cloudfront.IOrigin {
     if (endpoint.authType !== WebFunctionAuthType.AWS_IAM) {
@@ -122,16 +123,14 @@ class WebFunctionOriginWithOac extends cloudfront.OriginBase {
   public bind(scope: Construct, options: cloudfront.OriginBindOptions): cloudfront.OriginBindConfig {
     const config = super.bind(scope, options);
     const stack = Stack.of(scope);
-    if (stack !== Stack.of(this.endpoint)) {
-      // The resource policy names the distribution, and the distribution names the endpoint: a reference cycle.
-      throw new Error(`${scope.node.path}: a distribution with a WebFunctionOrigin must be in the function's stack (${Stack.of(this.endpoint).stackName})`);
-    }
     if (options.distributionId === undefined) {
       throw new Error(`${scope.node.path}: a WebFunctionOrigin with origin access control must be used by a cloudfront.Distribution (its ID scopes the resource policy)`);
     }
     const oac = this.props.originAccessControl ?? this.sharedOriginAccessControl(stack);
 
-    const result = this.endpoint.webFunction.addToResourcePolicy(new iam.PolicyStatement({
+    // Written from the distribution's stack: the statement names the distribution, which names the endpoint, so a
+    // statement in the function's stack would make a reference cycle when the distribution is in another stack.
+    const result = (this.endpoint.webFunction as WebFunctionBase)._addToResourcePolicyFrom(scope, new iam.PolicyStatement({
       principals: [new iam.ServicePrincipal('cloudfront.amazonaws.com')],
       actions: ['lambda:InvokeWebFunctionEndpoint'],
       resources: [this.endpoint.endpointArn],
@@ -142,7 +141,7 @@ class WebFunctionOriginWithOac extends cloudfront.OriginBase {
       },
     }));
     if (!result.statementAdded) {
-      throw new Error(`${scope.node.path}: could not add CloudFront to the resource policy of ${this.endpoint.webFunction.node.path}`);
+      throw new Error(`${scope.node.path}: could not add CloudFront to the resource policy of ${this.endpoint.webFunction.node.path} (the distribution must be in the function's account)`);
     }
 
     return { ...config, originProperty: { ...config.originProperty!, originAccessControlId: oac.originAccessControlRef.originAccessControlId } };

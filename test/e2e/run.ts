@@ -14,7 +14,7 @@ import * as path from 'node:path';
 import { promisify } from 'node:util';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { CloudWatchClient, DescribeAlarmsCommand, PutMetricDataCommand, SetAlarmStateCommand } from '@aws-sdk/client-cloudwatch';
-import { CloudWatchLogsClient, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
+import { CloudWatchLogsClient, DeleteLogGroupCommand, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { GetResourcePolicyCommand, GetWebFunctionEndpointCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
@@ -75,13 +75,14 @@ class Scenario {
   public async deploy(ctx: Context): Promise<Outputs> {
     const outFile = path.join(mkdtempSync(path.join(tmpdir(), 'webfn-e2e-')), 'outputs.json');
     this.log(`deploy ${JSON.stringify(ctx)}`);
-    await cdk(['deploy', ...this.contextArgs(ctx), '--require-approval', 'never', '--outputs-file', outFile]);
-    return JSON.parse(readFileSync(outFile, 'utf8'))[`WebFnE2E-${this.id}`];
+    await cdk(['deploy', '--all', ...this.contextArgs(ctx), '--require-approval', 'never', '--outputs-file', outFile]);
+    // Every stack of the scenario (e.g. a CloudFront distribution in a stack of its own); output names don't overlap.
+    return Object.assign({}, ...Object.values(JSON.parse(readFileSync(outFile, 'utf8'))) as Outputs[]);
   }
 
   public async destroy(ctx: Context) {
     this.log('destroy');
-    await cdk(['destroy', ...this.contextArgs(ctx), '--force']);
+    await cdk(['destroy', '--all', ...this.contextArgs(ctx), '--force']);
   }
 
   public summary(): string {
@@ -231,11 +232,21 @@ async function checkNothingLeft(s: Scenario, out: Outputs) {
   const bucketsLeft = (buckets.Buckets ?? []).map((b) => b.Name!);
   s.check('code bucket deleted', bucketsLeft.length === 0, bucketsLeft.join(', '));
   const providerLogs: string[] = [];
-  for (const prefix of [stackName, `/aws/lambda/${stackName}`]) {
-    const r = await logsIn(HOME).send(new DescribeLogGroupsCommand({ logGroupNamePrefix: prefix }));
-    for (const g of r.logGroups ?? []) providerLogs.push(g.logGroupName!);
+  for (const region of ALL_REGIONS) {
+    for (const prefix of [stackName, `/aws/lambda/${stackName}`]) {
+      const r = await logsIn(region).send(new DescribeLogGroupsCommand({ logGroupNamePrefix: prefix }));
+      for (const g of r.logGroups ?? []) {
+        // CDK's own cross-region reference providers log to groups it doesn't manage: test cleanup, not ours to check.
+        if (g.logGroupName!.includes('CustomCrossRegionExport')) {
+          await logsIn(region).send(new DeleteLogGroupCommand({ logGroupName: g.logGroupName! }));
+          s.log(`deleted CDK's ${region}:${g.logGroupName}`);
+        } else {
+          providerLogs.push(`${region}:${g.logGroupName}`);
+        }
+      }
+    }
   }
-  s.check('custom resource provider log groups deleted', providerLogs.length === 0, providerLogs.join(', '));
+  s.check('custom resource provider log groups deleted (every region)', providerLogs.length === 0, providerLogs.join(', '));
 }
 
 async function revisionIds(functionName: string): Promise<string[]> {
@@ -643,8 +654,8 @@ async function scenarioResourcePolicy(): Promise<Scenario> {
     out = await s.deploy(ctx);
     const functionArn = `arn:aws:lambda:${HOME}:${(await sts.send(new GetCallerIdentityCommand({}))).Account}:web-function/${out.FunctionName}`;
     const sids = await resourcePolicySids(functionArn);
-    s.check('one resource policy with every statement (Sid from addPermission; none from a grant)',
-      JSON.stringify(sids) === JSON.stringify(['E2eCaller', 'Cdn', '(none)']), `sids=${JSON.stringify(sids)}`);
+    s.check('the stack\'s statements in the policy (Sid from addPermission; generated for a grant)',
+      sids?.length === 3 && sids[0] === 'E2eCaller' && sids[1] === 'Cdn' && /^Cdk[0-9A-F]{8}0$/.test(sids[2]), `sids=${JSON.stringify(sids)}`);
     const caller = await assume(out.PolicyCallerRoleArn);
     const outsider = await assume(out.OutsiderRoleArn);
     for (const region of ['ap-south-1', 'us-east-1']) {
@@ -673,8 +684,8 @@ async function scenarioResourcePolicy(): Promise<Scenario> {
 }
 
 async function scenarioCloudFront(): Promise<Scenario> {
-  const s = new Scenario('Q', 'CloudFront: WebFunctionOrigin with OAC (regional SigV4, global SigV4a)');
-  const ctx: Context = { endpointType: 'PER_REGION', regions: ['us-east-1'], cdn: true };
+  const s = new Scenario('Q', 'CloudFront in another stack and region: WebFunctionOrigin with OAC (regional SigV4, global SigV4a), two policy writers');
+  const ctx: Context = { endpointType: 'PER_REGION', regions: ['us-east-1'], cdn: true, permissions: 'on' };
   let out: Outputs | undefined;
   try {
     out = await s.deploy(ctx);
@@ -694,6 +705,16 @@ async function scenarioCloudFront(): Promise<Scenario> {
     const auth = await viaCdn(`${cdn}/home/me`, { headers: { authorization: 'Bearer e2e-token' } });
     s.check('viewer Authorization header reaches the application', auth.status === 200 && auth.body?.authorization === 'Bearer e2e-token',
       `status=${auth.status} authorization=${auth.body?.authorization}`);
+
+    // Both stacks wrote into the one policy, each with its own generated Sids: the function's stack 3 statements, the
+    // distribution's 2 (its two origins on the default endpoint give the same statement, written once).
+    const functionArn = `arn:aws:lambda:${HOME}:${(await sts.send(new GetCallerIdentityCommand({}))).Account}:web-function/${out.FunctionName}`;
+    const sids = (await resourcePolicySids(functionArn)) ?? [];
+    const prefixes = new Set(sids.filter((sid) => sid.startsWith('Cdk')).map((sid) => sid.slice(0, 11)));
+    s.check('the function\'s stack and the distribution\'s stack both wrote their statements', sids.length === 5 && prefixes.size === 2
+      && sids.includes('E2eCaller') && sids.includes('Cdn'), `sids=${JSON.stringify(sids)}`);
+    const caller = await callUntil(out.Urlapsouth1, await assume(out.PolicyCallerRoleArn), 200, 120_000);
+    s.check('the function stack\'s statement still works next to the distribution\'s', caller.status === 200, `status=${caller.status}`);
 
     const direct = await call(out.Url);
     s.check('the endpoint itself still rejects unsigned requests', direct.status === 403, `status=${direct.status}`);

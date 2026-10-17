@@ -186,7 +186,9 @@ fn.addPermission('Cdn', {
 
 `addPermission` allows calling every endpoint unless you pass `endpoint`. For other actions, such as letting another account create revisions, use `fn.addToResourcePolicy(statement)`. Statements use the endpoint ARN for invoking and the function ARN for actions on the function.
 
-- **One resource policy per function, written by the function's stack.** The construct creates it (`AWS::Lambda::ResourcePolicy`) with the first statement. CloudFormation can't attach a second one: another stack, or a `CfnResourcePolicy` of your own on the function, fails at change-set validation with "already exists". If you attached one yourself, move its statements into `addPermission` or `addToResourcePolicy`. Each update of the policy replaces any statements added outside CloudFormation.
+- **Each stack writes only its own statements.** A Web Function has a single resource policy, and Web Functions have no `AddPermission`. So each stack that adds statements gets a custom resource (`Custom::LambdaWebResourcePolicyStatements`). It reads the policy, replaces the statements that stack wrote before, and writes the policy back, retrying if another writer changed it in the meantime. Statements from other stacks, and ones added outside CloudFormation, are kept. Writers include the function's stack, a stack with a CloudFront distribution, and a stack that imports the function in the same account.
+- **Sids are unique in the policy.** `addPermission`'s `id` becomes the statement's `Sid`, and other statements get a generated one (`Cdk<hash><n>`). If another stack or tool already uses that `Sid` for different content, the deployment fails with the `Sid`.
+- **Don't also attach an `AWS::Lambda::ResourcePolicy` yourself.** That resource replaces the whole document on every update, dropping every other writer's statements.
 - **Public policies are rejected.** Lambda refuses a policy that lets anyone call the function, and the construct fails synthesis first. A `*` principal is only accepted with a condition that pins the caller, such as `aws:PrincipalOrgID` (`iam.OrganizationPrincipal`) or `aws:SourceAccount`. For a public endpoint, use `authType: NONE`.
 - **Scope AWS services to your resource.** Lambda accepts a service principal with no condition, which would let that service call the endpoint on behalf of any account. The construct warns unless you give `sourceArn` or `sourceAccount` (or an `aws:SourceArn`, `aws:SourceAccount`, `aws:SourceOrgID` or `aws:SourceOrgPaths` condition).
 - Lambda copies the policy to every region the function's endpoints serve from. The copy is eventually consistent, and in tests changes applied in every region within seconds.
@@ -226,7 +228,10 @@ Some things to know:
 - Request bodies work without clients sending `x-amz-content-sha256`: CloudFront signs `POST`, `PUT` and `PATCH` requests with an unsigned payload.
 - A `PER_REGION` endpoint's origin calls one region: the home region, or the one you pass as `region`. Use one origin per region, for example in an origin group.
 - A `MULTI_REGION` endpoint can't include opt-in regions (such as `me-central-1`), because CloudFront can't sign for them. The construct fails synthesis.
-- The distribution must be in the function's stack. Lambda@Edge origin-request and origin-response triggers aren't supported on behaviors with this origin.
+- The distribution can be in another stack, in the function's account. Its stack writes the CloudFront statement into the function's resource policy, so the function's stack doesn't depend on it.
+- That stack can also be in another region, for example us-east-1 for an ACM certificate. CDK then passes the endpoint's domain and ARN with its cross-region references: SSM parameters plus custom resources of its own.
+- **Those references are strong by default.** A change that replaces the endpoint gives it a new domain and ARN. That includes a new endpoint type or region set, or a renamed function. The function's stack can't update a value while the distribution's stack still uses the old one, the same as with `Fn::ImportValue` in one region. Deploy such a change in two steps, or use weak references: CDK's synth warning `@aws-cdk/core:crossStackReferencesDefaultStrong` explains how.
+- Lambda@Edge origin-request and origin-response triggers aren't supported on behaviors with this origin.
 - The endpoint stays reachable at its own domain for signed requests your policies allow. Until a new distribution finishes deploying, requests through it can get a transient 403.
 - `new WebFunctionOrigin(endpoint)` is for a public (`NONE`) endpoint, for example behind AWS WAF. Lambda doesn't authenticate those requests, so the endpoint's own domain stays public too.
 
@@ -247,7 +252,7 @@ live.metricConcurrentRequests().createAlarm(this, 'Busy', { threshold: 60, evalu
 
 An imported function's metrics default to its own region. Its endpoints, revisions and log groups stay with the stack that defines it.
 
-An imported function's `grantInvoke` adds to the caller's IAM policy only, which is all a caller in the function's account needs. A caller in another account also needs the function's resource policy to allow it, which only the function's own stack can change: `addToResourcePolicy` on an imported function adds nothing and warns.
+An imported function works like a `WebFunction` here. `grantInvoke` and `addToResourcePolicy` write the importing stack's statements into the function's resource policy, in the function's region. This works only when the function is in the stack's account. For a function in another account, `grantInvoke` adds to the caller's IAM policy only, and `addToResourcePolicy` adds nothing and warns, so ask that account to allow the caller.
 
 ## Configuration
 
@@ -457,6 +462,20 @@ new WebFunction(this, 'Api', {
 - Every event is stored twice (`.local` plus the home-region copy), so expect about double log ingestion, plus cross-region transfer.
 - With `DESTROY`, deletion waits about a minute after the function is gone, because environments flush their last lines late.
 - Subscribe only to `fn.logGroup`: subscribing to the `.local` groups as well delivers every event twice.
+
+## Upgrading
+
+### From 0.1.5 or 0.1.6, with a resource policy
+
+Versions 0.1.5 and 0.1.6 wrote the function's resource policy with an `AWS::Lambda::ResourcePolicy`. Later versions don't. When an update removes that resource, CloudFormation deletes the function's **whole** resource policy at the end of the update, including the statements the new version just wrote. Callers that rely on the policy then get 403: other accounts, AWS services, and CloudFront.
+
+If your function has a resource policy (from `addPermission`, a grant to another account or an AWS service, or `WebFunctionOrigin`), first deploy once on the version you have, with the old resource retained:
+
+```ts
+(fn.node.findChild('ResourcePolicy') as CfnResource).applyRemovalPolicy(RemovalPolicy.RETAIN);
+```
+
+Then upgrade, without changing your statements in the same deployment. The new version takes over the statements it writes itself. A statement you removed in the same deployment would stay in the policy.
 
 ## Limitations
 

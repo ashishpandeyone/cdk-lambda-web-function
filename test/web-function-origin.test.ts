@@ -10,6 +10,7 @@ import {
 
 const code = () => lambda.Code.fromAsset(path.join(__dirname, 'fixtures', 'hello'));
 const env = { account: '111111111111', region: 'ap-south-1' };
+const WRITER = 'Custom::LambdaWebResourcePolicyStatements';
 
 function make(props: Partial<WebFunctionProps> = {}) {
   const stack = new Stack(new App(), 'Stack', { env });
@@ -20,7 +21,7 @@ function make(props: Partial<WebFunctionProps> = {}) {
 const distribution = (stack: Stack, origin: cloudfront.IOrigin) => new cloudfront.Distribution(stack, 'Cdn', { defaultBehavior: { origin } });
 const origins = (t: Template) => (Object.values(t.findResources('AWS::CloudFront::Distribution'))[0] as any).Properties.DistributionConfig.Origins;
 const oacs = (t: Template) => Object.values(t.findResources('AWS::CloudFront::OriginAccessControl')).map((r: any) => r.Properties.OriginAccessControlConfig);
-const policyStatements = (t: Template) => (Object.values(t.findResources('AWS::Lambda::ResourcePolicy'))[0] as any).Properties.PolicyDocument.Statement;
+const policyStatements = (t: Template) => (Object.values(t.findResources(WRITER))[0] as any).Properties.Policy.Statement;
 
 describe('WebFunctionOrigin.withOriginAccessControl', () => {
   test('signs with always-amz-auth (SigV4) and lets only this distribution call the endpoint', () => {
@@ -42,6 +43,7 @@ describe('WebFunctionOrigin.withOriginAccessControl', () => {
     }]);
 
     expect(policyStatements(t)).toEqual([{
+      Sid: expect.stringMatching(/^Cdk[0-9A-F]{8}0$/),
       Effect: 'Allow',
       Principal: { Service: 'cloudfront.amazonaws.com' },
       Action: 'lambda:InvokeWebFunctionEndpoint',
@@ -100,10 +102,23 @@ describe('WebFunctionOrigin.withOriginAccessControl', () => {
     expect(() => WebFunctionOrigin.withOriginAccessControl(fn.endpoint)).toThrow(/opt-in regions \(me-central-1\)/);
   });
 
-  test('the distribution must be in the function\'s stack', () => {
+  test('a distribution in another stack writes its statement from its own stack (no reference cycle)', () => {
     const { fn, stack } = make();
-    const other = new Stack(stack.node.scope as App, 'Cdn', { env });
-    expect(() => distribution(other, WebFunctionOrigin.withOriginAccessControl(fn.endpoint))).toThrow(/must be in the function's stack \(Stack\)/);
+    const app = stack.node.scope as App;
+    const cdnStack = new Stack(app, 'Cdn', { env });
+    distribution(cdnStack, WebFunctionOrigin.withOriginAccessControl(fn.endpoint));
+    const assembly = app.synth(); // fails on a cycle
+
+    const fnTemplate = Template.fromStack(stack);
+    fnTemplate.resourceCountIs(WRITER, 0);
+    const cdn = Template.fromStack(cdnStack);
+    const [writer] = Object.values(cdn.findResources(WRITER)) as any[];
+    expect(writer.Properties.FunctionArn).toEqual({ 'Fn::ImportValue': expect.stringMatching(/^Stack:ExportsOutputFnGetAttApi/) });
+    expect(writer.Properties.Policy.Statement[0].Condition.StringEquals['aws:SourceArn']['Fn::Join'][1]).toContainEqual({ Ref: expect.stringMatching(/^Cdn/) });
+    // The function's stack doesn't depend on the distribution's.
+    const stackDeps = (name: string) => assembly.getStackByName(name).dependencies.map((d) => d.id).filter((id) => !id.endsWith('.assets'));
+    expect(stackDeps('Stack')).toEqual([]);
+    expect(stackDeps('Cdn')).toEqual(['Stack']);
   });
 
   test('uses a given origin access control instead of creating one', () => {
@@ -236,7 +251,7 @@ describe('new WebFunctionOrigin', () => {
     distribution(stack, new WebFunctionOrigin(fn.endpoint, { keepaliveTimeout: Duration.seconds(10) }));
     const t = template();
     t.resourceCountIs('AWS::CloudFront::OriginAccessControl', 0);
-    t.resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+    t.resourceCountIs(WRITER, 0);
     expect(origins(t)[0]).toEqual(expect.objectContaining({
       DomainName: { 'Fn::GetAtt': [expect.stringMatching(/^ApiEndpoint/), 'DomainName'] },
       CustomOriginConfig: { OriginProtocolPolicy: 'https-only', OriginSSLProtocols: ['TLSv1.2'], OriginKeepaliveTimeout: 10 },

@@ -18,11 +18,11 @@ export class WebFunctionGrants {
    *
    * @internal
    */
-  public static _forEndpointArns(endpointArns: string[]): WebFunctionGrants {
-    return new WebFunctionGrants(() => endpointArns);
+  public static _forEndpointArns(endpointArns: string[], webFunction: IWebFunction): WebFunctionGrants {
+    return new WebFunctionGrants(() => endpointArns, webFunction);
   }
 
-  private constructor(private readonly endpointArns: () => string[], private readonly webFunction?: IWebFunction) {}
+  private constructor(private readonly endpointArns: () => string[], private readonly webFunction: IWebFunction) {}
 
   /**
    * Allows `grantee` to call the endpoint (`lambda:InvokeWebFunctionEndpoint`).
@@ -31,12 +31,11 @@ export class WebFunctionGrants {
    * endpoint serves from, including a MULTI_REGION global URL.
    *
    * A grantee in the function's account gets an IAM policy statement. Another account or an AWS service also gets
-   * a statement in the function's resource policy (not for an imported function's endpoints).
+   * a statement in the function's resource policy.
    */
   public invoke(grantee: iam.IGrantable): iam.Grant {
-    const options = { grantee, actions: ['lambda:InvokeWebFunctionEndpoint'], resourceArns: this.endpointArns() };
-    return this.webFunction
-      ? iam.Grant.addToPrincipalOrResource({ ...options, resource: this.webFunction })
-      : iam.Grant.addToPrincipal(options);
+    return iam.Grant.addToPrincipalOrResource({
+      grantee, actions: ['lambda:InvokeWebFunctionEndpoint'], resourceArns: this.endpointArns(), resource: this.webFunction,
+    });
   }
 }
