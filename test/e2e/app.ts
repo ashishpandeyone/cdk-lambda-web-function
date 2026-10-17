@@ -7,6 +7,7 @@
  * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint;
  * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500),
  * permissions (on: a caller allowed by the resource policy alone, plus CloudFront statements; none: the caller role without them),
+ * kms (true: encryptionKey, a multi-Region key with a us-east-1 replica in stacks of their own),
  * cdn (true: a CloudFront distribution in a second stack in us-east-1, WebFnE2E-<scenario>-Cdn, with WebFunctionOrigin: / → the default
  * PER_REGION endpoint in us-east-1, /home/* → its home region, /global/* → a MULTI_REGION endpoint).
  */
@@ -15,6 +16,7 @@ import { App, CfnOutput, CfnResource, Duration, RemovalPolicy, Stack } from 'aws
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import {
@@ -44,7 +46,15 @@ const forcedErrors = progressive ? new cloudwatch.Alarm(stack, 'ForcedErrors', {
   treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
 }) : undefined;
 
+// kms (true): a multi-Region key in its own stack, a replica in us-east-1 (the README's pattern), deployed before the function.
+const kmsKey = ctx('kms') === 'true'
+  ? new kms.Key(new Stack(app, `WebFnE2E-${scenario}-Key`, { env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: HOME_REGION } }), 'Key', {
+    multiRegion: true, removalPolicy: RemovalPolicy.DESTROY, pendingWindow: Duration.days(7),
+  })
+  : undefined;
+
 const options: WebFunctionOptions = {
+  encryptionKey: kmsKey,
   authType: WebFunctionAuthType[ctx('auth', 'AWS_IAM') as keyof typeof WebFunctionAuthType],
   endpoint: {
     endpointType,
@@ -157,6 +167,25 @@ if (ctx('cdn') === 'true') {
   });
   new CfnOutput(cdnStack, 'CdnUrl', { value: `https://${cdn.distributionDomainName}` });
   out('GlobalUrl', global.url);
+}
+
+if (kmsKey) {
+  const replicaStack = new Stack(app, `WebFnE2E-${scenario}-KeyReplica`, { env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: 'us-east-1' } });
+  const replica = new kms.CfnReplicaKey(replicaStack, 'Replica', {
+    primaryKeyArn: kmsKey.keyArn,
+    pendingWindowInDays: 7,
+    keyPolicy: new iam.PolicyDocument({
+      statements: [
+        new iam.PolicyStatement({ principals: [new iam.AccountRootPrincipal()], actions: ['kms:*'], resources: ['*'] }),
+        fn.encryptionKeyPolicyStatement(),
+      ],
+    }),
+  });
+  replica.applyRemovalPolicy(RemovalPolicy.DESTROY);
+  // The replica must exist before the endpoint activates in us-east-1.
+  stack.addStackDependency(replicaStack);
+  new CfnOutput(replicaStack, 'ReplicaKeyArn', { value: replica.attrArn });
+  out('KeyArn', kmsKey.keyArn);
 }
 
 // A caller with no IAM policy of its own, allowed by the function's resource policy only (same account).

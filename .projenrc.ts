@@ -66,6 +66,7 @@ const project = new awscdk.AwsCdkConstructLibrary({
     '@aws-crypto/sha256-js',
     '@aws-sdk/credential-providers',
     '@aws-sdk/client-sts',
+    '@aws-sdk/client-kms',
     // NodejsWebFunction fixture: a CommonJS package that require()s Node built-ins (v7 is the last CommonJS major).
     'supports-color@^7',
   ],

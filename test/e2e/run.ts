@@ -15,7 +15,8 @@ import { promisify } from 'node:util';
 import { Sha256 } from '@aws-crypto/sha256-js';
 import { CloudWatchClient, DescribeAlarmsCommand, PutMetricDataCommand, SetAlarmStateCommand } from '@aws-sdk/client-cloudwatch';
 import { CloudWatchLogsClient, DeleteLogGroupCommand, DescribeLogGroupsCommand, DescribeLogStreamsCommand, FilterLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
-import { GetResourcePolicyCommand, GetWebFunctionEndpointCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
+import { DescribeKeyCommand, KMSClient } from '@aws-sdk/client-kms';
+import { GetResourcePolicyCommand, GetWebFunctionEndpointCommand, GetWebFunctionRevisionCommand, LambdaWebClient, ListWebFunctionEndpointsCommand, ListWebFunctionRevisionsCommand, ListWebFunctionsCommand } from '@aws-sdk/client-lambda-web';
 import { ListBucketsCommand, S3Client } from '@aws-sdk/client-s3';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
 import { fromNodeProviderChain } from '@aws-sdk/credential-providers';
@@ -51,6 +52,7 @@ interface Context {
   fail?: boolean;
   permissions?: string;
   cdn?: boolean;
+  kms?: boolean;
 }
 
 class Scenario {
@@ -105,6 +107,7 @@ class Scenario {
         fail: ctx.fail,
         permissions: ctx.permissions,
         cdn: ctx.cdn,
+        kms: ctx.kms,
       })
         .filter(([, v]) => v !== undefined).flatMap(([k, v]) => ['-c', `${k}=${v}`])];
   }
@@ -734,6 +737,34 @@ async function scenarioCloudFront(): Promise<Scenario> {
   return s;
 }
 
+async function scenarioKms(): Promise<Scenario> {
+  const s = new Scenario('K', 'encryptionKey: a multi-Region key with a us-east-1 replica, PER_REGION endpoint');
+  const ctx: Context = { endpointType: 'PER_REGION', regions: ['us-east-1'], kms: true };
+  let out: Outputs | undefined;
+  try {
+    out = await s.deploy(ctx);
+    const admin = await adminCredentials();
+    for (const region of ['ap-south-1', 'us-east-1']) {
+      const res = await callUntil(out[`Url${region.replace(/-/g, '')}`], admin, 200, 120_000);
+      s.check(`${region} serves with the customer managed key`, res.status === 200 && res.body?.region === region, `status=${res.status} region=${res.body?.region}`);
+    }
+    const revision = await web.send(new GetWebFunctionRevisionCommand({ functionName: out.FunctionName, revisionId: out.RevisionId }));
+    s.check('the revision is encrypted with the key', revision.kmsKeyArn === out.KeyArn, `kmsKeyArn=${revision.kmsKeyArn}`);
+  } catch (e) {
+    s.check('scenario ran to completion', false, (e as Error).message);
+  } finally {
+    await s.destroy(ctx).catch((e) => s.check('destroy', false, (e as Error).message));
+    if (out) {
+      await checkNothingLeft(s, out);
+      for (const [region, arn] of [[HOME, out.KeyArn], ['us-east-1', out.ReplicaKeyArn]]) {
+        const key = await new KMSClient({ region, credentials }).send(new DescribeKeyCommand({ KeyId: arn })).catch(() => undefined);
+        s.check(`${region} key scheduled for deletion`, key?.KeyMetadata?.KeyState === 'PendingDeletion', `state=${key?.KeyMetadata?.KeyState}`);
+      }
+    }
+  }
+  return s;
+}
+
 async function main() {
   const all: Record<string, () => Promise<Scenario>> = {
     A: scenarioPerRegion,
@@ -746,6 +777,7 @@ async function main() {
     H: scenarioRollbackOn,
     P: scenarioResourcePolicy,
     Q: scenarioCloudFront,
+    K: scenarioKms,
   };
   const selected = process.argv.slice(2).filter((a) => all[a]);
   const run = selected.length > 0 ? selected : Object.keys(all);

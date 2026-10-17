@@ -279,6 +279,41 @@ table.grantReadWriteData(api);           // the default role trusts lambda.amazo
 - **The default execution role can only write to the function's own log groups**: the home region's, and the `.local` copy in every region it serves from. That's the minimum AWS documents for Web Functions. It doesn't use `AWSLambdaBasicExecutionRole`, which can also create any log group. Pass `role` to use your own, and include those log permissions.
 - **Renaming the function replaces it and changes its URL.** A generated name depends on the construct path, so moving the construct renames it too.
 
+### Encryption
+
+Lambda encrypts each revision's code and environment variables with an AWS owned key. To use your own key, pass `encryptionKey`:
+
+```ts
+declare const keyStack: Stack;     // deploys first
+declare const replicaStack: Stack; // in us-east-1, deploys before this stack
+
+const key = new kms.Key(keyStack, 'Key', { multiRegion: true });
+const api = new WebFunction(this, 'Api', {
+  runtime: lambda.Runtime.NODEJS_24_X,
+  code: lambda.Code.fromAsset('build'),
+  authType: WebFunctionAuthType.AWS_IAM,
+  endpoint: { endpointType: WebFunctionEndpointType.PER_REGION, regions: ['us-east-1'] },
+  encryptionKey: key,
+});
+
+// One replica per region the endpoint serves from, with Lambda's statement in its own policy.
+new kms.CfnReplicaKey(replicaStack, 'KeyReplica', {
+  primaryKeyArn: key.keyArn,
+  keyPolicy: new iam.PolicyDocument({
+    statements: [
+      new iam.PolicyStatement({ principals: [new iam.AccountRootPrincipal()], actions: ['kms:*'], resources: ['*'] }),
+      api.encryptionKeyPolicyStatement(),
+    ],
+  }),
+});
+```
+
+- **A key defined in your app gets Lambda's statement automatically.** It allows `kms:Decrypt` for `lambda.amazonaws.com`, limited to this function's revisions through `aws:SourceArn` and the encryption context Lambda sets. For an imported key, add `encryptionKeyPolicyStatement()` to its policy yourself.
+- **`PER_REGION` and `MULTI_REGION` endpoints need a multi-Region key**, with a replica in every region they serve from. The replicas must exist before the endpoint, so put the key and its replicas in stacks that deploy before the function's. Replica policies aren't copied from the primary, so each one needs `encryptionKeyPolicyStatement()`. With a single-Region key, the endpoint fails to activate in its other regions and the whole deployment rolls back. The construct fails synthesis instead, when it can tell: a key in your app without `multiRegion`, or an imported key whose ID doesn't start with `mrk-`.
+- **CloudFormation's role creates the revisions**, so it needs `kms:DescribeKey`, `kms:GenerateDataKey` and `kms:Decrypt` on the key. A key's default policy delegates to IAM, and CDK's default deployment role is allowed.
+- **Changing the key creates a new revision.** Earlier revisions keep their key, including the ones kept as rollback targets (`revisionRetention`). Keep the old key enabled while any of them might serve traffic again.
+- **Disabling the key, or removing Lambda's access, stops new execution environments from starting.** Running ones keep their decrypted copy for a while, so this doesn't contain traffic immediately.
+
 ### Defaults for every function (property injection)
 
 To give every function under a scope the same defaults, register a property injector for `WebFunction.PROPERTY_INJECTION_ID`, as you would for aws-cdk-lib's constructs. For example, a team's log retention:

@@ -1,10 +1,11 @@
 import { Annotations, Arn, ArnFormat, type CfnResource, Duration, type IResource, Lazy, Names, RemovalPolicy, Resource, Stack, Token, TokenComparison, Validations } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
-import { WebFunctionAuthType } from './enums';
+import { WebFunctionAuthType, WebFunctionEndpointType } from './enums';
 import { WebFunctionCode } from './private/code';
 import { WebFunctionLogGroup } from './private/log-group';
 import { DEFAULT_PERIOD, WEB_NAMESPACE } from './private/metrics';
@@ -73,6 +74,21 @@ export interface WebFunctionOptions {
    * @default - a role trusting `lambda.amazonaws.com` with `AWSLambdaBasicExecutionRole`
    */
   readonly role?: iam.IRole;
+
+  /**
+   * A customer managed KMS key for the function's revisions: their code and environment variables.
+   *
+   * A `PER_REGION` or `MULTI_REGION` endpoint needs a **multi-Region key** with a replica in every region it serves
+   * from, and each replica's policy must allow Lambda to decrypt (see `encryptionKeyPolicyStatement()`). A key defined
+   * in this app gets that statement added to its own policy.
+   *
+   * Changing the key creates a new revision. Earlier revisions, including the ones kept as rollback targets, still
+   * need their key.
+   * [disable-awslint:prefer-ref-interface]
+   *
+   * @default - an AWS owned key
+   */
+  readonly encryptionKey?: kms.IKey;
 
   /**
    * Environment variables. Names starting with `AWS_` are reserved.
@@ -431,6 +447,9 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
   /** The execution role. */
   public readonly role: iam.IRole;
 
+  /** The customer managed key of the function's revisions, if any. */
+  public readonly encryptionKey?: kms.IKey;
+
   /** The principal to grant permissions to (the execution role). */
   public readonly grantPrincipal: iam.IPrincipal;
 
@@ -503,8 +522,16 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
     this.resource = fn;
     this.webFunctionArn = fn.attrFunctionArn;
 
+    this.encryptionKey = props.encryptionKey;
+    if (this.encryptionKey) {
+      // Only a key defined in this app takes the statement (an imported key's policy is managed elsewhere).
+      this.encryptionKey.addToResourcePolicy(this.encryptionKeyPolicyStatement());
+      this.node.addValidation({ validate: () => this.validateEncryptionKey() });
+    }
+
     const revision = new lambda.CfnWebFunctionRevision(this, 'Revision', {
       functionName: fn.attrFunctionArn,
+      kmsKeyArn: this.encryptionKey?.keyArn,
       description: props.description,
       buildConfig: {
         codeConfig: { s3Object: { bucket: code.bucketName, key: code.objectKey, versionId: code.objectVersion } },
@@ -609,6 +636,36 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
     this.addToResourcePolicy(statement);
   }
 
+  /**
+   * The key-policy statement Lambda needs to start this function's environments with `encryptionKey`: `kms:Decrypt` for
+   * `lambda.amazonaws.com`, limited to this function's revisions (`aws:SourceArn` and the encryption context Lambda sets).
+   *
+   * It's added to `encryptionKey` when the key is defined in this app. Add it to every replica of a multi-Region key
+   * yourself: replicas don't share their primary's policy.
+   */
+  public encryptionKeyPolicyStatement(): iam.PolicyStatement {
+    const revisions = Stack.of(this).formatArn({
+      service: 'lambda', resource: 'web-function', resourceName: `${this.webFunctionName}/revision/*`, arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+    });
+    return new iam.PolicyStatement({
+      sid: 'LambdaWebFunctionDecrypt',
+      principals: [new iam.ServicePrincipal('lambda.amazonaws.com')],
+      actions: ['kms:Decrypt'],
+      resources: ['*'],
+      conditions: {
+        StringLike: { 'aws:SourceArn': revisions, 'kms:EncryptionContext:aws:lambda:WebFunctionRevisionArn': revisions },
+      },
+    });
+  }
+
+  /** Regional and multi-region endpoints need a multi-Region key: otherwise their other regions fail to activate. */
+  private validateEncryptionKey(): string[] {
+    const multi = this.endpoints.filter((e) => e.endpointType !== WebFunctionEndpointType.HOME_REGION);
+    if (multi.length === 0 || isMultiRegionKey(this.encryptionKey!) !== false) return [];
+    const typeName = (t: WebFunctionEndpointType) => (t === WebFunctionEndpointType.MULTI_REGION ? 'MULTI_REGION' : 'PER_REGION');
+    return [`encryptionKey must be a multi-Region key (with a replica in every serving region) for ${multi.map((e) => `${e.node.id} (${typeName(e.endpointType)})`).join(', ')}: with a single-Region key, the endpoint fails to activate in its other regions and the deployment rolls back`];
+  }
+
   private createEndpoint(id: string, options: AddWebFunctionEndpointOptions, namePrefix: string, nameSeed?: string): WebFunctionEndpoint {
     if (this.endpoints.length >= MAX_ENDPOINTS) {
       throw new Error(`${this.node.path}: a Web Function can have at most ${MAX_ENDPOINTS} endpoints`);
@@ -700,6 +757,17 @@ class ImportedWebFunction extends WebFunctionBase {
   public grantInvoke(grantee: iam.IGrantable): iam.Grant {
     return WebFunctionGrants._forEndpointArns([`${this.webFunctionArn}/endpoint/${this.endpointName ?? '*'}`], this).invoke(grantee);
   }
+}
+
+/** Whether a key is multi-Region, when that can be told at synthesis: its L1 in this app, or an `mrk-` key ID in its ARN. */
+function isMultiRegionKey(key: kms.IKey): boolean | undefined {
+  const cfn = key.node.defaultChild;
+  if (cfn instanceof kms.CfnKey) {
+    const multiRegion = Stack.of(cfn).resolve(cfn.multiRegion);
+    return typeof multiRegion === 'boolean' ? multiRegion : multiRegion === undefined ? false : undefined;
+  }
+  if (Token.isUnresolved(key.keyArn)) return undefined;
+  return /:key\/mrk-/.test(key.keyArn);
 }
 
 function importedArn(scope: Construct, id: string, attrs: WebFunctionAttributes): string {
