@@ -465,9 +465,9 @@ new WebFunction(this, 'Api', {
 
 ## Upgrading
 
-### From 0.1.5 or 0.1.6, with a resource policy
+### From 0.1.5 to 0.1.7, with a resource policy
 
-Versions 0.1.5 and 0.1.6 wrote the function's resource policy with an `AWS::Lambda::ResourcePolicy`. Later versions don't. When an update removes that resource, CloudFormation deletes the function's **whole** resource policy at the end of the update, including the statements the new version just wrote. Callers that rely on the policy then get 403: other accounts, AWS services, and CloudFront.
+Versions 0.1.5 to 0.1.7 wrote the function's resource policy with an `AWS::Lambda::ResourcePolicy`. Later versions don't (0.1.7 has the same code as 0.1.6). When an update removes that resource, CloudFormation deletes the function's **whole** resource policy at the end of the update, including the statements the new version just wrote. Callers that rely on the policy then get 403: other accounts, AWS services, and CloudFront.
 
 If your function has a resource policy (from `addPermission`, a grant to another account or an AWS service, or `WebFunctionOrigin`), first deploy once on the version you have, with the old resource retained:
 
