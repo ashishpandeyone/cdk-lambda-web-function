@@ -7,8 +7,8 @@
  * deployment (progressive: canary on the default endpoint watching the ForcedErrors alarm, and a linear Public endpoint;
  * rollbackOn: a 50% canary that rolls back on the endpoint's own 5XX rate), fail (true: the v1 server answers 500),
  * permissions (on: a caller allowed by the resource policy alone, plus CloudFront statements; none: the caller role without them),
- * cdn (true: a CloudFront distribution with WebFunctionOrigin: / → the default PER_REGION endpoint in us-east-1, /home/* → its
- * home region, /global/* → a MULTI_REGION endpoint).
+ * cdn (true: a CloudFront distribution in a second stack, WebFnE2E-<scenario>-Cdn, with WebFunctionOrigin: / → the default
+ * PER_REGION endpoint in us-east-1, /home/* → its home region, /global/* → a MULTI_REGION endpoint).
  */
 import * as path from 'node:path';
 import { App, CfnOutput, CfnResource, Duration, RemovalPolicy, Stack } from 'aws-cdk-lib';
@@ -132,7 +132,9 @@ if (ctx('cdn') === 'true') {
   const global = fn.addEndpoint('Global', {
     authType: WebFunctionAuthType.AWS_IAM, endpointType: WebFunctionEndpointType.MULTI_REGION, regions: ['us-east-1'],
   });
-  const forwardAuthorization = new cloudfront.CachePolicy(stack, 'ForwardAuthorization', {
+  // Its own stack: it writes its statements into the function's resource policy from there.
+  const cdnStack = new Stack(app, `WebFnE2E-${scenario}-Cdn`, { env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: HOME_REGION } });
+  const forwardAuthorization = new cloudfront.CachePolicy(cdnStack, 'ForwardAuthorization', {
     headerBehavior: cloudfront.CacheHeaderBehavior.allowList('Authorization'),
     minTtl: Duration.seconds(0),
     defaultTtl: Duration.seconds(0),
@@ -145,14 +147,14 @@ if (ctx('cdn') === 'true') {
     cachePolicy: forwardAuthorization,
     originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
   });
-  const cdn = new cloudfront.Distribution(stack, 'Cdn', {
+  const cdn = new cloudfront.Distribution(cdnStack, 'Cdn', {
     defaultBehavior: behavior(WebFunctionOrigin.withOriginAccessControl(fn.endpoint, { region: 'us-east-1' })),
     additionalBehaviors: {
       '/home/*': behavior(WebFunctionOrigin.withOriginAccessControl(fn.endpoint)),
       '/global/*': behavior(WebFunctionOrigin.withOriginAccessControl(global)),
     },
   });
-  out('CdnUrl', `https://${cdn.distributionDomainName}`);
+  new CfnOutput(cdnStack, 'CdnUrl', { value: `https://${cdn.distributionDomainName}` });
   out('GlobalUrl', global.url);
 }
 

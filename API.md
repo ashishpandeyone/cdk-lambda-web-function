@@ -145,9 +145,9 @@ public addToResourcePolicy(statement: PolicyStatement): AddToResourcePolicyResul
 
 Adds a statement to the function's resource policy, e.g. to let another account manage the function. For invoking, prefer `addPermission` or `grantInvoke`.
 
-The function has one resource policy (`AWS::Lambda::ResourcePolicy`), created on the first statement. This stack
-is its only writer: another stack or template can't also attach one, and changes made outside CloudFormation
-are overwritten by the next update of the policy.
+The function has a single resource policy. Each stack writes only its own statements into it, through a custom
+resource that merges them with every other stack's, and with statements added outside CloudFormation. From a
+stack in another account than the function, nothing is added.
 
 ###### `statement`<sup>Required</sup> <a name="statement" id="@ashishpandeyone/cdk-lambda-web-function.NodejsWebFunction.addToResourcePolicy.parameter.statement"></a>
 
@@ -851,9 +851,9 @@ public addToResourcePolicy(statement: PolicyStatement): AddToResourcePolicyResul
 
 Adds a statement to the function's resource policy, e.g. to let another account manage the function. For invoking, prefer `addPermission` or `grantInvoke`.
 
-The function has one resource policy (`AWS::Lambda::ResourcePolicy`), created on the first statement. This stack
-is its only writer: another stack or template can't also attach one, and changes made outside CloudFormation
-are overwritten by the next update of the policy.
+The function has a single resource policy. Each stack writes only its own statements into it, through a custom
+resource that merges them with every other stack's, and with statements added outside CloudFormation. From a
+stack in another account than the function, nothing is added.
 
 ###### `statement`<sup>Required</sup> <a name="statement" id="@ashishpandeyone/cdk-lambda-web-function.WebFunction.addToResourcePolicy.parameter.statement"></a>
 
@@ -1457,7 +1457,7 @@ new WebFunctionBase(scope: Construct, id: string, props?: ResourceProps)
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.with">with</a></code> | Applies one or more mixins to this construct. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.applyCrossStackReferenceStrength">applyCrossStackReferenceStrength</a></code> | Override the cross-stack reference strength for this resource. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.applyRemovalPolicy">applyRemovalPolicy</a></code> | Apply the given removal policy to this resource. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.addToResourcePolicy">addToResourcePolicy</a></code> | Adds a statement to the function's resource policy (not added for an imported function). |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.addToResourcePolicy">addToResourcePolicy</a></code> | Adds a statement to the function's resource policy, e.g. to let another account manage the function. For invoking, prefer `addPermission` or `grantInvoke`. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.grantInvoke">grantInvoke</a></code> | Allows `grantee` to call the function's endpoint. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.metric">metric</a></code> | A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.metricActiveTime">metricActiveTime</a></code> | Time the execution environments were active (`EnvironmentActiveTime`). |
@@ -1545,7 +1545,11 @@ account for data recovery and cleanup later (`RemovalPolicy.RETAIN`).
 public addToResourcePolicy(statement: PolicyStatement): AddToResourcePolicyResult
 ```
 
-Adds a statement to the function's resource policy (not added for an imported function).
+Adds a statement to the function's resource policy, e.g. to let another account manage the function. For invoking, prefer `addPermission` or `grantInvoke`.
+
+The function has a single resource policy. Each stack writes only its own statements into it, through a custom
+resource that merges them with every other stack's, and with statements added outside CloudFormation. From a
+stack in another account than the function, nothing is added.
 
 ###### `statement`<sup>Required</sup> <a name="statement" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionBase.addToResourcePolicy.parameter.statement"></a>
 
@@ -3214,7 +3218,7 @@ const webFunctionAttributes: WebFunctionAttributes = { ... }
 | **Name** | **Type** | **Description** |
 | --- | --- | --- |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAttributes.property.endpointName">endpointName</a></code> | <code>string</code> | The endpoint `grantInvoke` allows calling. |
-| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAttributes.property.webFunctionArn">webFunctionArn</a></code> | <code>string</code> | The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another region or account; across accounts, `grantInvoke` also needs the function's resource policy to allow the caller. |
+| <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAttributes.property.webFunctionArn">webFunctionArn</a></code> | <code>string</code> | The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another region or account; across accounts, `grantInvoke` also needs the function's resource policy to allow the caller. A token (e.g. from another stack) is taken to be in this stack's account and region. |
 | <code><a href="#@ashishpandeyone/cdk-lambda-web-function.WebFunctionAttributes.property.webFunctionName">webFunctionName</a></code> | <code>string</code> | The function's name. |
 
 ---
@@ -3241,7 +3245,7 @@ public readonly webFunctionArn: string;
 - *Type:* string
 - *Default:* built from `webFunctionName`, in this stack's account and region
 
-The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another region or account; across accounts, `grantInvoke` also needs the function's resource policy to allow the caller.
+The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another region or account; across accounts, `grantInvoke` also needs the function's resource policy to allow the caller. A token (e.g. from another stack) is taken to be in this stack's account and region.
 
 ---
 
@@ -4846,7 +4850,7 @@ The grant is on the endpoint's home-region ARN, which IAM evaluates for every re
 endpoint serves from, including a MULTI_REGION global URL.
 
 A grantee in the function's account gets an IAM policy statement. Another account or an AWS service also gets
-a statement in the function's resource policy (not for an imported function's endpoints).
+a statement in the function's resource policy.
 
 ###### `grantee`<sup>Required</sup> <a name="grantee" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionGrants.invoke.parameter.grantee"></a>
 
@@ -4939,7 +4943,7 @@ WebFunctionOrigin.withOriginAccessControl(endpoint: WebFunctionEndpoint, props?:
 
 An origin for an `AWS_IAM` endpoint, with origin access control: CloudFront signs every request to the endpoint (`always-amz-auth`, which keeps the viewer's `Authorization` header for your application), and the function's resource policy allows `cloudfront.amazonaws.com` to call this endpoint on behalf of this distribution only.
 
-The distribution must be in the function's stack.
+The distribution can be in another stack than the function, in the same account.
 
 ###### `endpoint`<sup>Required</sup> <a name="endpoint" id="@ashishpandeyone/cdk-lambda-web-function.WebFunctionOrigin.withOriginAccessControl.parameter.endpoint"></a>
 
@@ -4965,9 +4969,9 @@ The distribution must be in the function's stack.
 
 A Lambda Web Function, created in this app (`WebFunction`) or imported (`WebFunction.fromWebFunctionArn`).
 
-`addToResourcePolicy` adds to the function's resource policy (who else may call or manage it). A `WebFunction` has
-one, created by its stack on the first statement. An imported function's policy belongs to the stack that created
-it, so the statement isn't added (`statementAdded: false`).
+`addToResourcePolicy` adds to the function's resource policy (who else may call or manage it). Each stack writes
+only its own statements into the function's single policy, so any stack in the function's account can add them,
+including one that imports the function. From another account, nothing is added (`statementAdded: false`).
 
 #### Methods <a name="Methods" id="Methods"></a>
 
@@ -4993,9 +4997,8 @@ Allows `grantee` to call the function's endpoint (`lambda:InvokeWebFunctionEndpo
 
 for an imported function, the endpoint named in its attributes, or every endpoint.
 
-For a `WebFunction`, a grantee in this account gets an IAM policy statement; another account or an AWS service
-also gets a statement in the function's resource policy. For an imported function, only the grantee's IAM policy
-changes: across accounts, the function's own resource policy must also allow the grantee.
+A grantee in the function's account gets an IAM policy statement; another account or an AWS service also gets a
+statement in the function's resource policy (not when the function itself is in another account than this stack).
 [disable-awslint:no-grants]
 
 ###### `grantee`<sup>Required</sup> <a name="grantee" id="@ashishpandeyone/cdk-lambda-web-function.IWebFunction.grantInvoke.parameter.grantee"></a>

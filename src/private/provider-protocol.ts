@@ -127,3 +127,15 @@ export const EMPTY_ON_DELETE_TAG = { key: 'cdk-lambda-web:empty-on-delete', valu
 export interface CodeBucketCleanupProperties {
   readonly BucketName: string;
 }
+
+/**
+ * Writes one stack's statements into a Web Function's resource policy, keeping every other writer's statements
+ * (Web Functions have no AddPermission: the policy is a single document, so writers merge into it).
+ */
+export const RESOURCE_POLICY_STATEMENTS_RESOURCE_TYPE = 'Custom::LambdaWebResourcePolicyStatements';
+
+export interface ResourcePolicyStatementsProperties {
+  readonly FunctionArn: string;
+  /** The statements this resource owns, each with a Sid unique in the function's policy. */
+  readonly Policy: { readonly Statement: ReadonlyArray<{ readonly Sid: string; readonly [key: string]: unknown }> };
+}

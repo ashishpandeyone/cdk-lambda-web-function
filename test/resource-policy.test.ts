@@ -8,6 +8,7 @@ import { inspectResourcePolicy } from '../src/private/resource-policy';
 
 const code = () => lambda.Code.fromAsset(path.join(__dirname, 'fixtures', 'hello'));
 const env = { account: '111111111111', region: 'ap-south-1' };
+const WRITER = 'Custom::LambdaWebResourcePolicyStatements';
 const INVOKE = 'lambda:InvokeWebFunctionEndpoint';
 const fnArn = { 'Fn::GetAtt': [Match.stringLikeRegexp('^ApiF70053CD'), 'FunctionArn'] };
 const allEndpoints = { 'Fn::Join': ['', [fnArn, '/endpoint/*']] };
@@ -19,18 +20,18 @@ function make(props: Partial<WebFunctionProps> = {}) {
   return { stack, fn, template: () => Template.fromStack(stack) };
 }
 
-const policies = (t: Template) => Object.values(t.findResources('AWS::Lambda::ResourcePolicy')) as any[];
-const statements = (t: Template) => policies(t)[0].Properties.PolicyDocument.Statement;
+const policies = (t: Template) => Object.values(t.findResources(WRITER)) as any[];
+const statements = (t: Template) => policies(t)[0].Properties.Policy.Statement;
 const identityStatements = (t: Template) => Object.values(t.findResources('AWS::IAM::Policy'))
   .flatMap((p: any) => p.Properties.PolicyDocument.Statement).filter((s: any) => s.Action === INVOKE);
 
 describe('resource policy', () => {
   test('none by default', () => {
     const { template } = make();
-    template().resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+    template().resourceCountIs(WRITER, 0);
   });
 
-  test('addPermission: one policy on the function, a statement per permission', () => {
+  test('addPermission: one writer per stack and function, a statement per permission', () => {
     const { fn, template } = make();
     fn.addPermission('Partner', { principal: new iam.AccountPrincipal('222222222222') });
     fn.addPermission('Cdn', {
@@ -40,12 +41,13 @@ describe('resource policy', () => {
       sourceAccount: '111111111111',
     });
     const t = template();
-    t.resourceCountIs('AWS::Lambda::ResourcePolicy', 1);
-    expect(policies(t)[0].Properties.ResourceArn).toEqual({ 'Fn::GetAtt': [expect.stringMatching(/^ApiF70053CD/), 'FunctionArn'] });
-    // Fixed logical ID: CloudFormation can't create a second policy for the function, even to replace the first.
-    expect(Object.keys(t.findResources('AWS::Lambda::ResourcePolicy'))[0]).toMatch(/^ApiResourcePolicy[0-9A-F]{8}$/);
-    t.hasResourceProperties('AWS::Lambda::ResourcePolicy', {
-      PolicyDocument: {
+    t.resourceCountIs(WRITER, 1);
+    expect(policies(t)[0].Properties.FunctionArn).toEqual({ 'Fn::GetAtt': [expect.stringMatching(/^ApiF70053CD/), 'FunctionArn'] });
+    // Not the AWS::Lambda::ResourcePolicy of 0.1.5-0.1.6, which owned the whole document.
+    expect(Object.keys(t.findResources(WRITER))[0]).toMatch(/^ApiResourcePolicyStatements[0-9A-F]{8}$/);
+    t.resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+    t.hasResourceProperties(WRITER, {
+      Policy: {
         Version: '2012-10-17',
         Statement: [
           Match.objectEquals({
@@ -87,14 +89,14 @@ describe('resource policy', () => {
   });
 
   test('addToResourcePolicy: any action, and the policy is the dependable', () => {
-    const { fn, stack, template } = make();
+    const { fn, template } = make();
     const result = fn.addToResourcePolicy(new iam.PolicyStatement({
       principals: [new iam.AccountPrincipal('222222222222')],
       actions: ['lambda:GetWebFunction'],
       resources: [fn.webFunctionArn],
     }));
     expect(result.statementAdded).toBe(true);
-    expect(stack.resolve((result.policyDependable as any).logicalId)).toMatch(/^ApiResourcePolicy/);
+    expect((result.policyDependable as any).node.path).toBe('Stack/Api/ResourcePolicyStatements/Resource');
     expect(statements(template())).toEqual([expect.objectContaining({ Action: 'lambda:GetWebFunction', Resource: { 'Fn::GetAtt': [expect.stringMatching(/^ApiF70053CD/), 'FunctionArn'] } })]);
   });
 
@@ -102,7 +104,7 @@ describe('resource policy', () => {
     const { fn, stack, template } = make();
     fn.grantInvoke(new iam.Role(stack, 'Caller', { assumedBy: new iam.AccountRootPrincipal() }));
     const t = template();
-    t.resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+    t.resourceCountIs(WRITER, 0);
     expect(identityStatements(t)).toHaveLength(1);
   });
 
@@ -165,7 +167,7 @@ describe('resource policy', () => {
     const { fn, stack, template } = make();
     fn.grantInvoke(iam.Role.fromRoleArn(stack, 'Local', 'arn:aws:iam::111111111111:role/caller'));
     const t = template();
-    t.resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+    t.resourceCountIs(WRITER, 0);
     t.hasResourceProperties('AWS::IAM::Policy', { Roles: ['caller'], PolicyDocument: { Statement: [Match.objectLike({ Action: INVOKE })] } });
   });
 
@@ -192,7 +194,7 @@ describe('resource policy', () => {
     const stack = new Stack(new App(), 'Stack');
     const fn = new WebFunction(stack, 'Api', { runtime: lambda.Runtime.NODEJS_24_X, code: code(), authType: WebFunctionAuthType.AWS_IAM });
     fn.grantInvoke(new iam.Role(stack, 'Caller', { assumedBy: new iam.AccountRootPrincipal() }));
-    Template.fromStack(stack).resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+    Template.fromStack(stack).resourceCountIs(WRITER, 0);
   });
 
   test('a grant on the resource policy can be depended on', () => {
@@ -212,7 +214,7 @@ describe('resource policy', () => {
   test('a public statement fails synthesis; an organization principal is not public', () => {
     const pub = make();
     pub.fn.addToResourcePolicy(new iam.PolicyStatement({ principals: [new iam.AnyPrincipal()], actions: [INVOKE], resources: ['*'] }));
-    expect(() => pub.template()).toThrow(/resource policy: statement 1 allows principal '\*': Lambda rejects public resource policies/);
+    expect(() => pub.template()).toThrow(/resource policy: statement 'Cdk\w+' allows principal '\*': Lambda rejects public resource policies/);
 
     const org = make();
     org.fn.addPermission('Org', { principal: new iam.OrganizationPrincipal('o-a1b2c3d4e5') });
@@ -231,16 +233,79 @@ describe('resource policy', () => {
     expect(() => template()).toThrow(error);
   });
 
-  test('imported functions: nothing is added, with a warning; grants stay identity-only', () => {
+  test('an imported function in this account: the importing stack writes its own statements, in the function\'s region', () => {
     const stack = new Stack(new App(), 'Stack', { env });
-    const fn = WebFunction.fromWebFunctionArn(stack, 'Orders', 'arn:aws:lambda:ap-south-1:111111111111:web-function/orders');
+    const arn = 'arn:aws:lambda:us-east-1:111111111111:web-function/orders';
+    const fn = WebFunction.fromWebFunctionArn(stack, 'Orders', arn);
+    fn.grantInvoke(new iam.Role(stack, 'Caller', { assumedBy: new iam.AccountRootPrincipal() })); // identity-only
+    fn.grantInvoke(new iam.AccountPrincipal('222222222222'));
+    fn.addToResourcePolicy(new iam.PolicyStatement({ sid: 'Manage', principals: [new iam.AccountPrincipal('222222222222')], actions: ['lambda:GetWebFunction'], resources: [arn] }));
+    const t = Template.fromStack(stack);
+    expect(identityStatements(t)).toHaveLength(1);
+    expect(Object.keys(t.findResources(WRITER))).toEqual([expect.stringMatching(/^OrdersResourcePolicyStatements/)]);
+    expect(policies(t)[0].Properties.FunctionArn).toBe(arn);
+    expect(statements(t).map((st: any) => [st.Sid, st.Action, st.Resource])).toEqual([
+      [expect.stringMatching(/^Cdk[0-9A-F]{8}0$/), INVOKE, `${arn}/endpoint/*`],
+      ['Manage', 'lambda:GetWebFunction', arn],
+    ]);
+  });
+
+  test('an imported function by token ARN is taken to be in this account: a role of the account stays identity-only', () => {
+    const { fn, stack, template } = make();
+    const imported = WebFunction.fromWebFunctionArn(stack, 'Imported', fn.webFunctionArn);
+    expect([imported.env.account, imported.env.region]).toEqual([stack.account, stack.region]);
+    imported.grantInvoke(new iam.Role(stack, 'Caller', { assumedBy: new iam.AccountRootPrincipal() }));
+    const t = template();
+    t.resourceCountIs(WRITER, 0);
+    expect(identityStatements(t)).toHaveLength(1);
+  });
+
+  test('an imported function in another account: nothing is added, with a warning', () => {
+    const stack = new Stack(new App(), 'Stack', { env });
+    const fn = WebFunction.fromWebFunctionArn(stack, 'Orders', 'arn:aws:lambda:ap-south-1:999999999999:web-function/orders');
     const result = fn.addToResourcePolicy(new iam.PolicyStatement({ principals: [new iam.AccountPrincipal('222222222222')], actions: [INVOKE], resources: ['*'] }));
     expect(result.statementAdded).toBe(false);
     fn.grantInvoke(new iam.Role(stack, 'Caller', { assumedBy: new iam.AccountRootPrincipal() }));
     const t = Template.fromStack(stack);
-    t.resourceCountIs('AWS::Lambda::ResourcePolicy', 0);
+    t.resourceCountIs(WRITER, 0);
     expect(identityStatements(t)).toHaveLength(1);
-    Annotations.fromStack(stack).hasWarning('/Stack/Orders', Match.stringLikeRegexp('not added to an imported function\'s resource policy'));
+    Annotations.fromStack(stack).hasWarning('/Stack/Orders', Match.stringLikeRegexp('function in account 999999999999 was not added: stack Stack is in account 111111111111'));
+  });
+
+  test('every statement gets a Sid unique to its writer; two writers never share one', () => {
+    const app = new App();
+    const a = new Stack(app, 'A', { env });
+    const fn = new WebFunction(a, 'Api', { runtime: lambda.Runtime.NODEJS_24_X, code: code(), authType: WebFunctionAuthType.AWS_IAM });
+    fn.grantInvoke(new iam.AccountPrincipal('222222222222'));
+    const b = new Stack(app, 'B', { env });
+    WebFunction.fromWebFunctionArn(b, 'Api', 'arn:aws:lambda:ap-south-1:111111111111:web-function/api').grantInvoke(new iam.AccountPrincipal('222222222222'));
+    const sidA = statements(Template.fromStack(a))[0].Sid;
+    const sidB = statements(Template.fromStack(b))[0].Sid;
+    expect([sidA, sidB]).toEqual([expect.stringMatching(/^Cdk[0-9A-F]{8}0$/), expect.stringMatching(/^Cdk[0-9A-F]{8}0$/)]);
+    expect(sidA).not.toBe(sidB);
+  });
+
+  test('two statements with the same Sid fail synthesis', () => {
+    const { fn, template } = make();
+    fn.addPermission('Partner', { principal: new iam.AccountPrincipal('222222222222') });
+    fn.addToResourcePolicy(new iam.PolicyStatement({ sid: 'Partner', principals: [new iam.AccountPrincipal('333333333333')], actions: [INVOKE], resources: ['*'] }));
+    expect(() => template()).toThrow(/more than one statement has Sid 'Partner'/);
+  });
+
+  test('the provider may read and write the resource policy of any Web Function in the account', () => {
+    const { fn, template } = make();
+    fn.grantInvoke(new iam.AccountPrincipal('222222222222'));
+    template().hasResourceProperties('AWS::IAM::Role', {
+      Policies: Match.arrayWith([Match.objectLike({
+        PolicyDocument: {
+          Statement: Match.arrayWith([{
+            Effect: 'Allow',
+            Action: ['lambda:GetResourcePolicy', 'lambda:PutResourcePolicy', 'lambda:DeleteResourcePolicy'],
+            Resource: { 'Fn::Join': ['', ['arn:', { Ref: 'AWS::Partition' }, ':lambda:*:111111111111:web-function/*']] },
+          }]),
+        },
+      })]),
+    });
   });
 });
 

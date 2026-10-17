@@ -1,4 +1,4 @@
-import { Annotations, Arn, ArnFormat, Duration, type IResource, Lazy, Names, RemovalPolicy, Resource, Stack, Token, Validations } from 'aws-cdk-lib';
+import { Annotations, Arn, ArnFormat, Duration, type IResource, Lazy, Names, RemovalPolicy, Resource, Stack, Token, TokenComparison, Validations } from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
@@ -8,7 +8,7 @@ import { WebFunctionAuthType } from './enums';
 import { WebFunctionCode } from './private/code';
 import { WebFunctionLogGroup } from './private/log-group';
 import { DEFAULT_PERIOD, WEB_NAMESPACE } from './private/metrics';
-import { inspectResourcePolicy } from './private/resource-policy';
+import { ResourcePolicyStatements } from './private/resource-policy-statements';
 import { RevisionCleanup } from './private/revision-cleanup';
 import { CFN_VALIDATE_UNKNOWN_TYPE, assertResourceName } from './private/validation';
 import { WebFunctionEndpoint, type AddWebFunctionEndpointOptions, type WebFunctionEndpointOptions } from './web-function-endpoint';
@@ -153,9 +153,9 @@ export interface WebFunctionProps extends WebFunctionOptions {
 /**
  * A Lambda Web Function, created in this app (`WebFunction`) or imported (`WebFunction.fromWebFunctionArn`).
  *
- * `addToResourcePolicy` adds to the function's resource policy (who else may call or manage it). A `WebFunction` has
- * one, created by its stack on the first statement. An imported function's policy belongs to the stack that created
- * it, so the statement isn't added (`statementAdded: false`).
+ * `addToResourcePolicy` adds to the function's resource policy (who else may call or manage it). Each stack writes
+ * only its own statements into the function's single policy, so any stack in the function's account can add them,
+ * including one that imports the function. From another account, nothing is added (`statementAdded: false`).
  */
 export interface IWebFunction extends IResource, lambda.IWebFunctionRef, iam.IResourceWithPolicy {
   /**
@@ -176,9 +176,8 @@ export interface IWebFunction extends IResource, lambda.IWebFunctionRef, iam.IRe
    * Allows `grantee` to call the function's endpoint (`lambda:InvokeWebFunctionEndpoint`): the default endpoint
    * of a `WebFunction`; for an imported function, the endpoint named in its attributes, or every endpoint.
    *
-   * For a `WebFunction`, a grantee in this account gets an IAM policy statement; another account or an AWS service
-   * also gets a statement in the function's resource policy. For an imported function, only the grantee's IAM policy
-   * changes: across accounts, the function's own resource policy must also allow the grantee.
+   * A grantee in the function's account gets an IAM policy statement; another account or an AWS service also gets a
+   * statement in the function's resource policy (not when the function itself is in another account than this stack).
    * [disable-awslint:no-grants]
    */
   grantInvoke(grantee: iam.IGrantable): iam.Grant;
@@ -211,6 +210,7 @@ export interface WebFunctionAttributes {
   /**
    * The function's ARN, e.g. `arn:aws:lambda:us-east-1:111122223333:web-function/orders`. It may be in another
    * region or account; across accounts, `grantInvoke` also needs the function's resource policy to allow the caller.
+   * A token (e.g. from another stack) is taken to be in this stack's account and region.
    *
    * @default - built from `webFunctionName`, in this stack's account and region
    */
@@ -285,9 +285,34 @@ export abstract class WebFunctionBase extends Resource implements IWebFunction {
   public abstract grantInvoke(grantee: iam.IGrantable): iam.Grant;
 
   /**
-   * Adds a statement to the function's resource policy (not added for an imported function).
+   * Adds a statement to the function's resource policy, e.g. to let another account manage the function.
+   * For invoking, prefer `addPermission` or `grantInvoke`.
+   *
+   * The function has a single resource policy. Each stack writes only its own statements into it, through a custom
+   * resource that merges them with every other stack's, and with statements added outside CloudFormation. From a
+   * stack in another account than the function, nothing is added.
    */
-  public abstract addToResourcePolicy(statement: iam.PolicyStatement): iam.AddToResourcePolicyResult;
+  public addToResourcePolicy(statement: iam.PolicyStatement): iam.AddToResourcePolicyResult {
+    return this._addToResourcePolicyFrom(this, statement);
+  }
+
+  /**
+   * Adds a statement to the function's resource policy from `scope`'s stack, e.g. the stack of a CloudFront
+   * distribution that uses the function.
+   *
+   * @internal
+   */
+  public _addToResourcePolicyFrom(scope: Construct, statement: iam.PolicyStatement): iam.AddToResourcePolicyResult {
+    const from = Stack.of(scope);
+    if (Token.compareStrings(from.account, this.env.account) === TokenComparison.DIFFERENT) {
+      Annotations.of(this).addWarningV2('@cdk-lambda-web:resourcePolicyFromOtherAccount',
+        `A statement for the resource policy of a function in account ${this.env.account} was not added: stack ${from.stackName} is in account ${from.account}. Add it in the function's account.`);
+      return { statementAdded: false };
+    }
+    const writer = ResourcePolicyStatements.of(scope, this, this.webFunctionArn);
+    writer.add(statement);
+    return { statementAdded: true, policyDependable: writer.resource };
+  }
 
   /**
    * A metric of this function's execution environments in `AWS/Lambda/Web` (dimension `FunctionName`), across all endpoints.
@@ -415,7 +440,6 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
   private readonly resource: lambda.CfnWebFunction;
   private readonly revisionCleanup: RevisionCleanup;
   private readonly permissionIds = new Set<string>();
-  private resourcePolicy?: { readonly document: iam.PolicyDocument; readonly resource: lambda.CfnResourcePolicy };
 
   constructor(scope: Construct, id: string, props: WebFunctionProps) {
     super(scope, id);
@@ -579,42 +603,6 @@ export class WebFunction extends WebFunctionBase implements iam.IGrantable {
     this.addToResourcePolicy(statement);
   }
 
-  /**
-   * Adds a statement to the function's resource policy, e.g. to let another account manage the function.
-   * For invoking, prefer `addPermission` or `grantInvoke`.
-   *
-   * The function has one resource policy (`AWS::Lambda::ResourcePolicy`), created on the first statement. This stack
-   * is its only writer: another stack or template can't also attach one, and changes made outside CloudFormation
-   * are overwritten by the next update of the policy.
-   */
-  public addToResourcePolicy(statement: iam.PolicyStatement): iam.AddToResourcePolicyResult {
-    const policy = this.resourcePolicy ?? this.createResourcePolicy();
-    policy.document.addStatements(statement);
-    return { statementAdded: true, policyDependable: policy.resource };
-  }
-
-  private createResourcePolicy(): NonNullable<WebFunction['resourcePolicy']> {
-    const document = new iam.PolicyDocument();
-    // One policy per function at a fixed ID: CloudFormation can't create a second one, even to replace the first.
-    const resource = new lambda.CfnResourcePolicy(this, 'ResourcePolicy', {
-      resourceArn: this.webFunctionArn,
-      policyDocument: document,
-    });
-    this.node.addValidation({
-      validate: () => {
-        const json = Stack.of(this).resolve(document.toJSON());
-        const { errors, unscopedServices } = inspectResourcePolicy(json);
-        if (unscopedServices.length > 0) {
-          Annotations.of(this).addWarningV2('@cdk-lambda-web:servicePrincipalWithoutSource',
-            `The resource policy lets ${[...new Set(unscopedServices)].join(', ')} call the function from any account. Restrict it with sourceArn or sourceAccount (addPermission), or a principal with conditions.`);
-        }
-        return [...document.validateForResourcePolicy(), ...errors.map((e) => `resource policy: ${e}`)];
-      },
-    });
-    this.resourcePolicy = { document, resource };
-    return this.resourcePolicy;
-  }
-
   private createEndpoint(id: string, options: AddWebFunctionEndpointOptions, namePrefix: string, nameSeed?: string): WebFunctionEndpoint {
     if (this.endpoints.length >= MAX_ENDPOINTS) {
       throw new Error(`${this.node.path}: a Web Function can have at most ${MAX_ENDPOINTS} endpoints`);
@@ -669,7 +657,9 @@ class ImportedWebFunction extends WebFunctionBase {
 
   constructor(scope: Construct, id: string, attrs: WebFunctionAttributes) {
     const arn = importedArn(scope, id, attrs);
-    super(scope, id, { environmentFromArn: arn });
+    // A token ARN (e.g. a WebFunction in another stack, or Fn.importValue) is taken to be in this stack's account and
+    // region, as its metrics already are: a grant to a role of this account then stays identity-only.
+    super(scope, id, Token.isUnresolved(arn) ? {} : { environmentFromArn: arn });
     this.webFunctionArn = arn;
     this.webFunctionName = attrs.webFunctionName ?? Arn.split(arn, ArnFormat.SLASH_RESOURCE_NAME).resourceName!;
     if (attrs.endpointName !== undefined) assertResourceName(this, 'endpointName', attrs.endpointName);
@@ -677,13 +667,7 @@ class ImportedWebFunction extends WebFunctionBase {
   }
 
   public grantInvoke(grantee: iam.IGrantable): iam.Grant {
-    return WebFunctionGrants._forEndpointArns([`${this.webFunctionArn}/endpoint/${this.endpointName ?? '*'}`]).invoke(grantee);
-  }
-
-  public addToResourcePolicy(_statement: iam.PolicyStatement): iam.AddToResourcePolicyResult {
-    Annotations.of(this).addWarningV2('@cdk-lambda-web:importedResourcePolicy',
-      'Statements are not added to an imported function\'s resource policy: add them in the stack that creates the function (a function has one resource policy, and only one stack can write it).');
-    return { statementAdded: false };
+    return WebFunctionGrants._forEndpointArns([`${this.webFunctionArn}/endpoint/${this.endpointName ?? '*'}`], this).invoke(grantee);
   }
 }
 

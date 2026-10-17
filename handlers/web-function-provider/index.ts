@@ -4,8 +4,12 @@ import { handleCode } from './code';
 import { handleCodeBucketCleanup } from './code-bucket-cleanup';
 import { handleEndpointLookup } from './endpoint-lookup';
 import { handleLogGroup } from './log-group';
+import { handleResourcePolicyStatements } from './resource-policy';
 import { handleRevisionCleanup } from './revision-cleanup';
-import { CODE_BUCKET_CLEANUP_RESOURCE_TYPE, CODE_RESOURCE_TYPE, ENDPOINT_LOOKUP_RESOURCE_TYPE, LOG_GROUP_RESOURCE_TYPE, REGIONAL_ALARM_RESOURCE_TYPE, REVISION_CLEANUP_RESOURCE_TYPE } from '../../src/private/provider-protocol';
+import {
+  CODE_BUCKET_CLEANUP_RESOURCE_TYPE, CODE_RESOURCE_TYPE, ENDPOINT_LOOKUP_RESOURCE_TYPE, LOG_GROUP_RESOURCE_TYPE, REGIONAL_ALARM_RESOURCE_TYPE,
+  RESOURCE_POLICY_STATEMENTS_RESOURCE_TYPE, REVISION_CLEANUP_RESOURCE_TYPE,
+} from '../../src/private/provider-protocol';
 
 export interface HandlerResponse {
   readonly PhysicalResourceId: string;
@@ -27,6 +31,8 @@ export async function handler(event: CloudFormationCustomResourceEvent): Promise
       return handleRegionalAlarm(event);
     case CODE_BUCKET_CLEANUP_RESOURCE_TYPE:
       return handleCodeBucketCleanup(event);
+    case RESOURCE_POLICY_STATEMENTS_RESOURCE_TYPE:
+      return handleResourcePolicyStatements(event);
     default:
       // A rollback to an earlier version of this handler deletes resource types that only a newer version created.
       // Nothing was created for them here, so the delete succeeds instead of failing (and being retried) for minutes.
